@@ -1,6 +1,7 @@
 /**
- * Cadastral AI Mapper — Frontend Leaflet & API Controller
+ * Cadastral AI Mapper — Frontend Leaflet & Multi-City API Controller
  * Smart India Hackathon 2026
+ * Supports Hierarchical Region (City) -> Mini-Segment (Sub-area) -> Parcels
  */
 
 const API_BASE = "http://localhost:8000/api";
@@ -16,20 +17,24 @@ let selectedParcelId = null;
 let activeFilter = "all";
 let searchTerm = "";
 
+// Hierarchical Region State
+let selectedCity = "delhi";
+let selectedSegment = "karol_bagh";
+let regionsCache = [];
+
 // Initialize Application on DOM Load
 document.addEventListener("DOMContentLoaded", () => {
   initMap();
   setupEventListeners();
-  loadData();
+  loadRegionsHierarchy();
 });
 
 /**
- * Initializes the Leaflet map and base tile layers.
+ * Initializes Leaflet map and base tile layers.
  */
 function initMap() {
-  // Center on sample survey area (Bengaluru Urban Zone)
   map = L.map("map-container", {
-    center: [12.9348, 77.6207],
+    center: [28.6400, 77.2000],
     zoom: 17,
     zoomControl: false
   });
@@ -40,7 +45,7 @@ function initMap() {
   const esriSatellite = L.tileLayer(
     "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
     {
-      attribution: "Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community",
+      attribution: "Tiles &copy; Esri &mdash; High-Res Satellite Imagery",
       maxZoom: 19
     }
   );
@@ -61,7 +66,6 @@ function initMap() {
     }
   );
 
-  // Default Basemap: High Resolution Satellite Imagery
   esriSatellite.addTo(map);
 
   const baseMaps = {
@@ -91,6 +95,64 @@ function initMap() {
       dashArray: "4, 4"
     }
   }).addTo(map);
+}
+
+/**
+ * Loads list of all configured city regions from backend and populates the City selector.
+ */
+async function loadRegionsHierarchy() {
+  try {
+    const res = await fetch(`${API_BASE}/regions`).then(r => r.json());
+    regionsCache = res.regions || [];
+
+    const citySelect = document.getElementById("city-select");
+    citySelect.innerHTML = "";
+
+    regionsCache.forEach(reg => {
+      const opt = document.createElement("option");
+      opt.value = reg.key;
+      opt.textContent = `${reg.name} (${reg.segment_count} Segments)`;
+      citySelect.appendChild(opt);
+    });
+
+    if (regionsCache.length > 0) {
+      selectedCity = regionsCache[0].key;
+      citySelect.value = selectedCity;
+      await updateSegmentDropdown(selectedCity);
+    }
+  } catch (err) {
+    console.warn("Could not fetch /api/regions from backend. Using static fallback.", err);
+    setupStaticRegionsFallback();
+  }
+}
+
+/**
+ * Updates the Mini-Segment dropdown options based on the chosen city region.
+ */
+async function updateSegmentDropdown(cityKey) {
+  try {
+    const res = await fetch(`${API_BASE}/regions/${cityKey}/segments`).then(r => r.json());
+    const segments = res.segments || [];
+
+    const segmentSelect = document.getElementById("segment-select");
+    segmentSelect.innerHTML = "";
+
+    segments.forEach(seg => {
+      const opt = document.createElement("option");
+      opt.value = seg.key;
+      opt.textContent = seg.name;
+      segmentSelect.appendChild(opt);
+    });
+
+    if (segments.length > 0) {
+      selectedSegment = segments[0].key;
+      segmentSelect.value = selectedSegment;
+    }
+
+    await loadDataForCurrentSegment();
+  } catch (err) {
+    console.warn("Could not fetch segments for city", cityKey, err);
+  }
 }
 
 /**
@@ -157,10 +219,9 @@ function onEachParcelFeature(feature, layer) {
     }
   });
 
-  // Popup Preview
   const props = feature.properties;
   layer.bindTooltip(
-    `<strong>Survey No:</strong> ${props.survey_no}<br><strong>ULPIN:</strong> ${props.ulpin}<br><strong>Area:</strong> ${props.area_sqm} m²`,
+    `<strong>${props.segment_name || props.segment || "Segment"}</strong><br><strong>Survey No:</strong> ${props.survey_no}<br><strong>ULPIN:</strong> ${props.ulpin}<br><strong>Area:</strong> ${props.area_sqm} m²`,
     { sticky: true, className: "custom-leaflet-tooltip" }
   );
 }
@@ -173,7 +234,7 @@ function onEachConflictFeature(feature, layer) {
   layer.bindPopup(`
     <div style="color: #111;">
       <h4 style="color: #ef4444; margin-bottom: 4px;">⚠️ ${props.conflict_type || "OVERLAP CONFLICT"}</h4>
-      <p style="font-size: 11px; margin-bottom: 6px;">${props.description}</p>
+      <p style="font-size: 11px; margin-bottom: 4px;">${props.description}</p>
       <span style="font-size: 10px; font-weight: bold; background: #fee2e2; color: #991b1b; padding: 2px 6px; border-radius: 4px;">
         Overlap Area: ${props.overlap_area_sqm} m²
       </span>
@@ -182,14 +243,16 @@ function onEachConflictFeature(feature, layer) {
 }
 
 /**
- * Loads parcels, conflicts, and system stats from the backend.
+ * Loads parcels, conflicts, and KPI stats scoped to the currently selected City & Mini-Segment.
  */
-async function loadData() {
+async function loadDataForCurrentSegment() {
   try {
+    const urlParams = `region=${encodeURIComponent(selectedCity)}&segment=${encodeURIComponent(selectedSegment)}`;
+
     const [parcelsRes, conflictsRes, statsRes] = await Promise.all([
-      fetch(`${API_BASE}/parcels`).then(r => r.json()),
-      fetch(`${API_BASE}/conflicts`).then(r => r.json()),
-      fetch(`${API_BASE}/stats`).then(r => r.json())
+      fetch(`${API_BASE}/parcels?${urlParams}`).then(r => r.json()),
+      fetch(`${API_BASE}/conflicts?${urlParams}`).then(r => r.json()),
+      fetch(`${API_BASE}/stats?${urlParams}`).then(r => r.json())
     ]);
 
     allParcelsData = parcelsRes;
@@ -198,9 +261,13 @@ async function loadData() {
     renderParcels();
     renderConflicts();
     renderStats(statsRes);
+
+    // Auto-focus / re-center map to the bounds of the loaded segment features
+    if (parcelsLayer.getLayers().length > 0) {
+      map.fitBounds(parcelsLayer.getBounds(), { padding: [40, 40], maxZoom: 18 });
+    }
   } catch (err) {
-    console.warn("Could not connect to FastAPI backend. Loading embedded sample fallback.", err);
-    loadSampleFallback();
+    console.warn("Could not connect to FastAPI backend.", err);
   }
 }
 
@@ -227,7 +294,7 @@ function renderParcels() {
 }
 
 /**
- * Renders conflict polygons and sidebar cards.
+ * Renders conflict polygons and sidebar cards for the active mini-segment.
  */
 function renderConflicts() {
   if (!allConflictsData) return;
@@ -239,10 +306,8 @@ function renderConflicts() {
     features: unresolvedConflicts
   });
 
-  // Update Badge
   document.getElementById("conflicts-badge").textContent = unresolvedConflicts.length;
 
-  // Render Sidebar Cards
   const container = document.getElementById("conflicts-container");
   container.innerHTML = "";
 
@@ -251,7 +316,7 @@ function renderConflicts() {
       <div class="empty-state">
         <i class="ph-bold ph-check-circle" style="color: var(--status-success);"></i>
         <h3>Zero Topology Conflicts</h3>
-        <p>All parcel boundaries conform to strict geometric non-overlapping topological rules.</p>
+        <p>All parcel boundaries in <strong>${selectedSegment.replace('_', ' ').title()}</strong> conform to strict topological rules.</p>
       </div>
     `;
     return;
@@ -277,7 +342,7 @@ function renderConflicts() {
 }
 
 /**
- * Updates header KPI counters.
+ * Updates header KPI counters for current segment.
  */
 function renderStats(stats) {
   if (!stats) return;
@@ -299,10 +364,10 @@ function selectParcel(feature) {
   document.getElementById("parcel-empty-state").classList.add("hidden");
   document.getElementById("parcel-details-card").classList.remove("hidden");
 
-  // Switch to inspector tab
   switchTab("inspector-view");
 
-  // Populate data
+  document.getElementById("detail-region").textContent = props.region_name || props.region || selectedCity.toUpperCase();
+  document.getElementById("detail-segment").textContent = props.segment_name || props.segment || selectedSegment.toUpperCase();
   document.getElementById("detail-ulpin").textContent = props.ulpin || "--";
   document.getElementById("detail-survey-no").textContent = props.survey_no || "--";
   document.getElementById("detail-land-use").textContent = props.land_use || "Residential";
@@ -333,7 +398,7 @@ async function resolveConflict(conflictId) {
       })
     });
     if (res.ok) {
-      await loadData();
+      await loadDataForCurrentSegment();
     }
   } catch (err) {
     console.error("Error resolving conflict:", err);
@@ -353,9 +418,21 @@ function switchTab(targetTabId) {
 }
 
 /**
- * Setup event listeners for toolbar, tabs, search, and action buttons.
+ * Setup event listeners for toolbar, city dropdown, search, and action buttons.
  */
 function setupEventListeners() {
+  // City Region Dropdown Change
+  document.getElementById("city-select").addEventListener("change", async (e) => {
+    selectedCity = e.target.value;
+    await updateSegmentDropdown(selectedCity);
+  });
+
+  // Mini-Segment Dropdown Change
+  document.getElementById("segment-select").addEventListener("change", async (e) => {
+    selectedSegment = e.target.value;
+    await loadDataForCurrentSegment();
+  });
+
   // Tab Navigation
   document.querySelectorAll(".tab-btn").forEach(btn => {
     btn.addEventListener("click", () => {
@@ -380,14 +457,14 @@ function setupEventListeners() {
     renderParcels();
   });
 
-  // Action: Trigger AI SAM Segmentation
+  // Action: Trigger AI SAM Segmentation for selected segment
   document.getElementById("btn-run-sam").addEventListener("click", async () => {
     const btn = document.getElementById("btn-run-sam");
     const origHtml = btn.innerHTML;
     btn.innerHTML = `<i class="ph-bold ph-spinner" style="animation: spin 1s infinite linear;"></i> Extracting...`;
     try {
-      await fetch(`${API_BASE}/parcels/run-segmentation`, { method: "POST" });
-      await loadData();
+      await fetch(`${API_BASE}/parcels/run-segmentation?region=${selectedCity}&segment=${selectedSegment}`, { method: "POST" });
+      await loadDataForCurrentSegment();
     } catch (err) {
       console.error(err);
     } finally {
@@ -395,24 +472,24 @@ function setupEventListeners() {
     }
   });
 
-  // Action: Trigger Conflict Matrix Check
+  // Action: Trigger Conflict Matrix Check for selected segment
   document.getElementById("btn-run-topology").addEventListener("click", async () => {
     try {
-      await fetch(`${API_BASE}/conflicts/detect`, { method: "POST" });
-      await loadData();
+      await fetch(`${API_BASE}/conflicts/detect?region=${selectedCity}&segment=${selectedSegment}`, { method: "POST" });
+      await loadDataForCurrentSegment();
       switchTab("conflicts-view");
     } catch (err) {
       console.error(err);
     }
   });
 
-  // Action: Export GeoJSON
+  // Action: Export GeoJSON for current segment
   document.getElementById("btn-export-geojson").addEventListener("click", () => {
     if (!allParcelsData) return;
     const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(allParcelsData, null, 2));
     const downloadAnchor = document.createElement("a");
     downloadAnchor.setAttribute("href", dataStr);
-    downloadAnchor.setAttribute("download", "cadastral_ai_parcels_sih2026.geojson");
+    downloadAnchor.setAttribute("download", `cadastral_parcels_${selectedCity}_${selectedSegment}.geojson`);
     document.body.appendChild(downloadAnchor);
     downloadAnchor.click();
     downloadAnchor.remove();
@@ -423,7 +500,7 @@ function setupEventListeners() {
     if (!selectedParcelId) return;
     try {
       await fetch(`${API_BASE}/parcels/${selectedParcelId}/approve`, { method: "POST" });
-      await loadData();
+      await loadDataForCurrentSegment();
       if (allParcelsData) {
         const updated = allParcelsData.features.find(p => p.id === selectedParcelId);
         if (updated) selectParcel(updated);
@@ -438,7 +515,7 @@ function setupEventListeners() {
     if (!selectedParcelId) return;
     try {
       await fetch(`${API_BASE}/parcels/${selectedParcelId}/reject`, { method: "POST" });
-      await loadData();
+      await loadDataForCurrentSegment();
       if (allParcelsData) {
         const updated = allParcelsData.features.find(p => p.id === selectedParcelId);
         if (updated) selectParcel(updated);
@@ -478,32 +555,12 @@ function toggleLayer(layer, buttonEl) {
   }
 }
 
-/**
- * Fallback loader for static local execution without backend.
- */
-function loadSampleFallback() {
-  fetch("../data/sample_area/sample_parcels.geojson")
-    .then(r => r.json())
-    .then(data => {
-      allParcelsData = data;
-      renderParcels();
-      renderStats({
-        total_parcels: data.features.length,
-        approved_parcels: data.features.filter(f => f.properties.status === "approved").length,
-        pending_parcels: data.features.filter(f => f.properties.status === "pending").length,
-        flagged_parcels: data.features.filter(f => f.properties.status === "flagged").length,
-        total_conflicts: 1,
-        total_surveyed_area_hectares: 0.45,
-        ai_confidence_average: 0.92
-      });
-    })
-    .catch(() => {});
-
-  fetch("../data/sample_area/sample_conflicts.geojson")
-    .then(r => r.json())
-    .then(data => {
-      allConflictsData = data;
-      renderConflicts();
-    })
-    .catch(() => {});
+function setupStaticRegionsFallback() {
+  const citySelect = document.getElementById("city-select");
+  citySelect.innerHTML = `
+    <option value="delhi">Delhi</option>
+    <option value="ghaziabad">Ghaziabad</option>
+    <option value="meerut">Meerut</option>
+    <option value="panipat">Panipat</option>
+  `;
 }

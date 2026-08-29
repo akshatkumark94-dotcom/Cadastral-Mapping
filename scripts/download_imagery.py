@@ -1,13 +1,19 @@
 """
-Data Ingestion Script: Download Satellite Imagery Tiles
-Downloads high-resolution aerial/satellite tiles for a given region (Bhuvan / Esri / Sentinel-2)
-and stitches them for AI model segmentation inference.
+Data Ingestion Script: Download Satellite Imagery Tiles per Mini-Segment
+Smart India Hackathon 2026 — Cadastral AI Mapper
 """
 
 import math
+import sys
+import argparse
 import requests
 from pathlib import Path
-from ml_pipeline.config import RAW_DATA_DIR, DEFAULT_BBOX
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from ml_pipeline.config import RAW_DATA_DIR, get_all_segments, get_segment
 
 
 def deg2num(lat_deg: float, lon_deg: float, zoom: int):
@@ -34,20 +40,24 @@ def download_tile(x: int, y: int, z: int, out_path: Path) -> bool:
     return False
 
 
-def download_sample_area_imagery(bbox: dict = DEFAULT_BBOX, zoom: int = 17) -> Path:
+def download_segment_imagery(region_key: str, segment_key: str, bbox: dict, zoom: int = 17) -> Path:
     """
-    Downloads imagery tiles for the bounding box and saves them to data/raw/imagery/.
+    Downloads imagery tiles for a specific mini-segment.
     """
-    imagery_dir = RAW_DATA_DIR / "imagery"
+    imagery_dir = RAW_DATA_DIR / "imagery" / f"{region_key}_{segment_key}"
     imagery_dir.mkdir(parents=True, exist_ok=True)
 
-    min_lat, max_lat = bbox["min_lat"], bbox["max_lat"]
-    min_lon, max_lon = bbox["min_lon"], bbox["max_lon"]
+    min_lat = bbox.get("min_lat", 0.0)
+    max_lat = bbox.get("max_lat", 0.0)
+    min_lon = bbox.get("min_lon", 0.0)
+    max_lon = bbox.get("max_lon", 0.0)
+
+    if min_lat == 0.0 or max_lat == 0.0 or min_lon == 0.0 or max_lon == 0.0:
+        print(f"[Imagery] Placeholder coordinates for {region_key} > {segment_key}. Skipping tile download.")
+        return imagery_dir
 
     x_min, y_min = deg2num(max_lat, min_lon, zoom)
     x_max, y_max = deg2num(min_lat, max_lon, zoom)
-
-    print(f"[Data-Track] Downloading satellite tiles for Zoom level {zoom} (X: {x_min}-{x_max}, Y: {y_min}-{y_max})...")
 
     downloaded = 0
     for x in range(min(x_min, x_max), max(x_min, x_max) + 1):
@@ -58,9 +68,25 @@ def download_sample_area_imagery(bbox: dict = DEFAULT_BBOX, zoom: int = 17) -> P
                 if success:
                     downloaded += 1
 
-    print(f"[Data-Track] Successfully downloaded {downloaded} satellite tile(s) to {imagery_dir}")
+    print(f"[Imagery] Downloaded {downloaded} tile(s) for {region_key} > {segment_key} into {imagery_dir}")
     return imagery_dir
 
 
+def main():
+    parser = argparse.ArgumentParser(description="Download satellite imagery for city segments.")
+    parser.add_argument("--region", type=str, default=None, help="Target city region key (e.g. delhi)")
+    parser.add_argument("--segment", type=str, default=None, help="Target mini-segment key (e.g. karol_bagh)")
+    parser.add_argument("--zoom", type=int, default=17, help="Tile zoom level (default: 17)")
+    args = parser.parse_args()
+
+    if args.region and args.segment:
+        seg = get_segment(args.region, args.segment)
+        if seg:
+            download_segment_imagery(args.region, args.segment, seg, zoom=args.zoom)
+    else:
+        for r_key, s_key, s_dict in get_all_segments():
+            download_segment_imagery(r_key, s_key, s_dict, zoom=args.zoom)
+
+
 if __name__ == "__main__":
-    download_sample_area_imagery()
+    main()

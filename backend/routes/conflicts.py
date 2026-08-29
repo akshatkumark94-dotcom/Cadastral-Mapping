@@ -1,6 +1,6 @@
 """
 Topology Conflicts API endpoints for Cadastral AI Mapper.
-Detects overlaps, gaps, slivers and provides automated geometric conflict resolutions.
+Hierarchical Multi-City & Mini-Segment Support (SIH 2026).
 """
 
 from typing import Optional
@@ -30,19 +30,29 @@ router = APIRouter(prefix="/api/conflicts", tags=["Topology Conflicts"])
 
 
 @router.get("", response_model=ConflictFeatureCollection)
-def get_conflicts(status: Optional[str] = Query(None, description="Filter by status: UNRESOLVED, RESOLVED")):
-    """Retrieves all detected topology conflicts as a GeoJSON FeatureCollection."""
-    conflicts = db_get_all_conflicts(status_filter=status)
+def get_conflicts(
+    region: Optional[str] = Query(None, description="Filter by City Region (e.g. delhi, ghaziabad)"),
+    segment: Optional[str] = Query(None, description="Filter by Mini-Segment (e.g. karol_bagh, indirapuram)"),
+    status: Optional[str] = Query(None, description="Filter by status: UNRESOLVED, RESOLVED")
+):
+    """Retrieves detected topology conflicts as GeoJSON, filtered by region & segment."""
+    conflicts = db_get_all_conflicts(
+        status_filter=status,
+        region=region,
+        segment=segment
+    )
     return {"type": "FeatureCollection", "name": "cadastral_conflicts", "features": conflicts}
 
 
 @router.post("/detect", response_model=ConflictFeatureCollection)
-def run_live_conflict_detection():
+def run_live_conflict_detection(
+    region: Optional[str] = Query(None, description="Filter by City Region"),
+    segment: Optional[str] = Query(None, description="Filter by Mini-Segment")
+):
     """
-    Executes live topology conflict matrix analysis across all currently registered parcels.
-    Persists new conflicts to the database.
+    Executes live topology conflict matrix analysis across parcels in the chosen city / mini-segment.
     """
-    parcels = db_get_all_parcels()
+    parcels = db_get_all_parcels(region=region, segment=segment)
     detected = detect_topology_conflicts(parcels, overlap_threshold_sqm=1.0)
 
     conn = get_db_connection()
@@ -51,26 +61,29 @@ def run_live_conflict_detection():
         c_id = conf["id"]
         geom_json = json.dumps(conf["geometry"])
         parcels_json = json.dumps(conf["parcels_involved"])
+        r_val = region or "delhi"
+        s_val = segment or "karol_bagh"
+
         cursor.execute("""
             INSERT OR REPLACE INTO conflicts (
-                id, conflict_id, conflict_type, severity, parcels_involved_json,
+                id, conflict_id, conflict_type, severity, region, segment, parcels_involved_json,
                 overlap_area_sqm, description, suggested_action, status, detected_at, geometry_json
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'UNRESOLVED', CURRENT_TIMESTAMP, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'UNRESOLVED', CURRENT_TIMESTAMP, ?)
         """, (
-            c_id, c_id, conf["conflict_type"], conf["severity"], parcels_json,
+            c_id, c_id, conf["conflict_type"], conf["severity"], r_val, s_val, parcels_json,
             conf["overlap_area_sqm"], conf["description"], conf["suggested_action"], geom_json
         ))
     conn.commit()
     conn.close()
 
-    all_conflicts = db_get_all_conflicts()
+    all_conflicts = db_get_all_conflicts(region=region, segment=segment)
     return {"type": "FeatureCollection", "name": "cadastral_conflicts", "features": all_conflicts}
 
 
 @router.post("/{conflict_id}/resolve")
 def resolve_conflict(conflict_id: str, payload: ConflictResolveRequest):
     """
-    Applies geometric topology resolution (e.g. boundary clipping, edge snapping) to resolve dispute.
+    Applies geometric topology resolution (boundary clipping / edge snapping) to resolve dispute.
     """
     conflicts = db_get_all_conflicts()
     target_conflict = next((c for c in conflicts if c["id"] == conflict_id or c["properties"].get("conflict_id") == conflict_id), None)
@@ -92,7 +105,6 @@ def resolve_conflict(conflict_id: str, payload: ConflictResolveRequest):
                 poly2 = shape(parcel2["geometry"])
 
                 if payload.resolution_method == "CLIP_TO_MEDIAN_EDGE" or payload.resolution_method == "PRIORITIZE_PRIMARY":
-                    # Clip secondary parcel geometry
                     clean_p1, clean_p2 = resolve_overlap_by_clipping(poly1, poly2)
 
                     area1, perim1 = calculate_metric_metrics(clean_p1)

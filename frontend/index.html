@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Cadastral AI Mapper — Automated Land Parcel & ULPIN Intelligence</title>
-  <meta name="description" content="AI-enabled automated cadastral mapping, SAM boundary extraction, topology conflict resolution, and ULPIN registry for Smart India Hackathon 2026.">
+  <title>Cadastral AI Mapper — Multi-City Automated Cadastral Intelligence</title>
+  <meta name="description" content="AI-enabled automated cadastral mapping across Delhi, Ghaziabad, Meerut, and Panipat. SAM footprint extraction, topology conflict arbitration, and ULPIN registry for SIH 2026.">
 
   <!-- Google Fonts: Inter & Outfit -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -30,11 +30,34 @@
         </div>
         <div class="brand-text">
           <h1>Cadastral AI Mapper</h1>
-          <span class="badge-tag">SIH 2026 • DILRMP / Bhuvan Standard</span>
+          <span class="badge-tag">SIH 2026 • Multi-City Hierarchy</span>
         </div>
       </div>
 
-      <!-- Quick KPI Counters -->
+      <!-- City & Mini-Segment Two-Level Selector -->
+      <div class="region-selector-bar">
+        <div class="selector-group">
+          <label for="city-select"><i class="ph-bold ph-buildings"></i> City Region:</label>
+          <select id="city-select" class="custom-select">
+            <option value="delhi">Delhi</option>
+            <option value="ghaziabad">Ghaziabad</option>
+            <option value="meerut">Meerut</option>
+            <option value="panipat">Panipat</option>
+          </select>
+        </div>
+
+        <div class="selector-divider">/</div>
+
+        <div class="selector-group">
+          <label for="segment-select"><i class="ph-bold ph-map-pin"></i> Mini-Segment:</label>
+          <select id="segment-select" class="custom-select">
+            <!-- Dynamically populated via app.js -->
+            <option value="karol_bagh">Karol Bagh</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Quick KPI Counters (Scoped to Selected Mini-Segment) -->
       <div class="kpi-ribbon">
         <div class="kpi-card" id="kpi-total-parcels">
           <span class="kpi-label">Parcels</span>
@@ -56,11 +79,11 @@
 
       <!-- Action Toolbar -->
       <div class="header-actions">
-        <button id="btn-run-sam" class="btn btn-primary" title="Trigger SAM / AI Boundary Extraction">
+        <button id="btn-run-sam" class="btn btn-primary" title="Trigger SAM / AI Boundary Extraction for current segment">
           <i class="ph-bold ph-sparkle"></i>
           <span>Extract Footprints</span>
         </button>
-        <button id="btn-run-topology" class="btn btn-secondary" title="Run live topology validation matrix">
+        <button id="btn-run-topology" class="btn btn-secondary" title="Run live topology validation for current segment">
           <i class="ph-bold ph-arrows-merge"></i>
           <span>Check Overlaps</span>
         </button>
@@ -150,11 +173,19 @@
             <!-- Property Metadata Grid -->
             <div class="prop-grid">
               <div class="prop-item">
+                <span class="prop-label"><i class="ph-bold ph-buildings"></i> Region / City</span>
+                <span class="prop-val" id="detail-region">--</span>
+              </div>
+              <div class="prop-item">
+                <span class="prop-label"><i class="ph-bold ph-map-pin"></i> Mini-Segment</span>
+                <span class="prop-val" id="detail-segment">--</span>
+              </div>
+              <div class="prop-item">
                 <span class="prop-label"><i class="ph-bold ph-hash"></i> Survey No</span>
                 <span class="prop-val" id="detail-survey-no">--</span>
               </div>
               <div class="prop-item">
-                <span class="prop-label"><i class="ph-bold ph-buildings"></i> Land Use</span>
+                <span class="prop-label"><i class="ph-bold ph-tag"></i> Land Use</span>
                 <span class="prop-val" id="detail-land-use">--</span>
               </div>
               <div class="prop-item">

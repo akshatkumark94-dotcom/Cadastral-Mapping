@@ -9,6 +9,11 @@ import sys
 import argparse
 import requests
 from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 from ml_pipeline.config import CHECKPOINTS_DIR, SAM_CHECKPOINT_URLS, SAM_CHECKPOINT_TYPE
 
 

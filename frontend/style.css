@@ -114,6 +114,55 @@ body {
   letter-spacing: 0.02em;
 }
 
+/* Two-Level Region & Segment Selector */
+.region-selector-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  padding: 6px 14px;
+  border-radius: var(--radius-md);
+}
+
+.selector-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.selector-group label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.custom-select {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  color: #fff;
+  font-family: var(--font-main);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  outline: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.custom-select:hover, .custom-select:focus {
+  border-color: var(--accent-primary);
+}
+
+.selector-divider {
+  color: var(--text-subtle);
+  font-weight: 700;
+}
+
 /* KPI Ribbon */
 .kpi-ribbon {
   display: flex;

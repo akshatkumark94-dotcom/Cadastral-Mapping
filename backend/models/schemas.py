@@ -1,5 +1,6 @@
 """
 Data schemas and Pydantic validation models for Cadastral AI Mapper.
+Hierarchical Multi-City & Mini-Segment Support (SIH 2026).
 """
 
 from typing import List, Dict, Any, Optional, Literal
@@ -17,6 +18,10 @@ class ParcelProperties(BaseModel):
     survey_no: str
     owner_name: Optional[str] = "Unknown / Unassigned"
     land_use: Optional[str] = "Residential"
+    region: Optional[str] = "delhi"
+    region_name: Optional[str] = "Delhi"
+    segment: Optional[str] = "karol_bagh"
+    segment_name: Optional[str] = "Karol Bagh"
     area_sqm: float
     perimeter_m: float
     status: Literal["approved", "pending", "flagged", "rejected"] = "pending"
@@ -42,9 +47,11 @@ class ParcelCreateRequest(BaseModel):
     survey_no: str
     owner_name: Optional[str] = "New Owner"
     land_use: Optional[str] = "Residential"
+    region: Optional[str] = "delhi"
+    segment: Optional[str] = "karol_bagh"
     geometry: GeoJSONGeometry
-    state_code: Optional[str] = "29"
-    district_code: Optional[str] = "572"
+    state_code: Optional[str] = "07"
+    district_code: Optional[str] = "001"
 
 
 class ParcelUpdateRequest(BaseModel):
@@ -73,6 +80,36 @@ class ConflictResolveRequest(BaseModel):
     notes: Optional[str] = None
 
 
+class SegmentItem(BaseModel):
+    key: str
+    name: str
+    region_key: Optional[str] = None
+    region_name: Optional[str] = None
+    min_lat: float = 0.0
+    max_lat: float = 0.0
+    min_lon: float = 0.0
+    max_lon: float = 0.0
+
+
+class RegionItem(BaseModel):
+    key: str
+    name: str
+    state_code: str
+    district_code: str
+    segment_count: int
+    segments: List[SegmentItem]
+
+
+class RegionListResponse(BaseModel):
+    regions: List[RegionItem]
+
+
+class SegmentListResponse(BaseModel):
+    region_key: str
+    region_name: str
+    segments: List[SegmentItem]
+
+
 class StatsResponse(BaseModel):
     total_parcels: int
     approved_parcels: int
@@ -82,4 +119,6 @@ class StatsResponse(BaseModel):
     total_surveyed_area_sqm: float
     total_surveyed_area_hectares: float
     ai_confidence_average: float
+    region_filter: Optional[str] = "all"
+    segment_filter: Optional[str] = "all"
     system_status: str = "ONLINE"
