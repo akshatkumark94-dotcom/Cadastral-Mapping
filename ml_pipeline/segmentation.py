@@ -7,10 +7,23 @@ import os
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
 import numpy as np
-from shapely.geometry import Polygon, mapping
-from ml_pipeline.config import SAM_CHECKPOINT_PATH, SAM_CHECKPOINT_TYPE, DEFAULT_BBOX, MIN_CONTOUR_AREA_PIXELS
-from ml_pipeline.id_generator import generate_ulpin
+from ml_pipeline.config import (
+    SAM_CHECKPOINT_PATH,
+    SAM_CHECKPOINT_TYPE,
+    MIN_CONTOUR_AREA_PIXELS,
+    get_segment,
+    REGIONS
+)
 from ml_pipeline.geometry import calculate_metric_metrics, simplify_polygon
+
+DEFAULT_BBOX = {
+    "min_lat": 28.6480,
+    "max_lat": 28.6580,
+    "min_lon": 77.1850,
+    "max_lon": 77.1980,
+    "state_code": "07",
+    "district_code": "001"
+}
 
 # Try importing CV2 & PyTorch / SAM
 try:
