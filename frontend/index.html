@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cadastral AI Mapper — Automated Land Parcel & ULPIN Intelligence</title>
+  <meta name="description" content="AI-enabled automated cadastral mapping, SAM boundary extraction, topology conflict resolution, and ULPIN registry for Smart India Hackathon 2026.">
+
+  <!-- Google Fonts: Inter & Outfit -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+
+  <!-- Leaflet CSS & JS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+
+  <!-- Phosphor Icons -->
+  <script src="https://unpkg.com/@phosphor-icons/web"></script>
+
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Top Header -->
+    <header class="app-header">
+      <div class="header-brand">
+        <div class="brand-logo">
+          <i class="ph-bold ph-polygon"></i>
+        </div>
+        <div class="brand-text">
+          <h1>Cadastral AI Mapper</h1>
+          <span class="badge-tag">SIH 2026 • DILRMP / Bhuvan Standard</span>
+        </div>
+      </div>
+
+      <!-- Quick KPI Counters -->
+      <div class="kpi-ribbon">
+        <div class="kpi-card" id="kpi-total-parcels">
+          <span class="kpi-label">Parcels</span>
+          <span class="kpi-value" id="val-parcels">--</span>
+        </div>
+        <div class="kpi-card" id="kpi-area">
+          <span class="kpi-label">Area (Ha)</span>
+          <span class="kpi-value text-accent" id="val-area">--</span>
+        </div>
+        <div class="kpi-card" id="kpi-conflicts">
+          <span class="kpi-label">Conflicts</span>
+          <span class="kpi-value text-danger" id="val-conflicts">--</span>
+        </div>
+        <div class="kpi-card" id="kpi-confidence">
+          <span class="kpi-label">AI Confidence</span>
+          <span class="kpi-value text-success" id="val-confidence">--</span>
+        </div>
+      </div>
+
+      <!-- Action Toolbar -->
+      <div class="header-actions">
+        <button id="btn-run-sam" class="btn btn-primary" title="Trigger SAM / AI Boundary Extraction">
+          <i class="ph-bold ph-sparkle"></i>
+          <span>Extract Footprints</span>
+        </button>
+        <button id="btn-run-topology" class="btn btn-secondary" title="Run live topology validation matrix">
+          <i class="ph-bold ph-arrows-merge"></i>
+          <span>Check Overlaps</span>
+        </button>
+        <button id="btn-export-geojson" class="btn btn-outline" title="Export GeoJSON Dataset">
+          <i class="ph-bold ph-download-simple"></i>
+          <span>Export</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Workspace -->
+    <div class="main-workspace">
+      <!-- Leaflet Map Viewport -->
+      <div class="map-viewport" id="map-container">
+        <!-- Floating Layer / Filter Quick Bar -->
+        <div class="map-overlay-controls">
+          <div class="search-box">
+            <i class="ph-bold ph-magnifying-glass"></i>
+            <input type="text" id="search-input" placeholder="Search Survey No / ULPIN / Owner..." />
+          </div>
+
+          <div class="filter-chips">
+            <button class="chip active" data-filter="all">All</button>
+            <button class="chip" data-filter="approved">Approved</button>
+            <button class="chip" data-filter="pending">Pending</button>
+            <button class="chip chip-danger" data-filter="flagged">Flagged</button>
+          </div>
+
+          <div class="layer-toggle-group">
+            <button class="layer-btn active" id="toggle-parcels" title="Toggle Cadastral Parcels">
+              <i class="ph-bold ph-squares-four"></i>
+            </button>
+            <button class="layer-btn active" id="toggle-conflicts" title="Toggle Conflict Overlays">
+              <i class="ph-bold ph-warning-octagon"></i>
+            </button>
+            <button class="layer-btn active" id="toggle-roads" title="Toggle Reference Roads">
+              <i class="ph-bold ph-path"></i>
+            </button>
+          </div>
+        </div>
+
+        <!-- Map Legend -->
+        <div class="map-legend">
+          <h4>Cadastral Legend</h4>
+          <div class="legend-item"><span class="legend-dot status-approved"></span> Approved Parcel</div>
+          <div class="legend-item"><span class="legend-dot status-pending"></span> AI Candidate (Pending)</div>
+          <div class="legend-item"><span class="legend-dot status-flagged"></span> Boundary Conflict</div>
+          <div class="legend-item"><span class="legend-dot status-overlap"></span> Overlap Zone</div>
+        </div>
+      </div>
+
+      <!-- Right Inspection / Resolution Sidebar -->
+      <aside class="sidebar" id="sidebar-panel">
+        <!-- Sidebar Navigation Tabs -->
+        <div class="sidebar-tabs">
+          <button class="tab-btn active" id="tab-inspector" data-tab="inspector-view">
+            <i class="ph-bold ph-identification-card"></i> Parcel Inspector
+          </button>
+          <button class="tab-btn" id="tab-conflicts" data-tab="conflicts-view">
+            <i class="ph-bold ph-warning-circle"></i> Conflicts (<span id="conflicts-badge">0</span>)
+          </button>
+        </div>
+
+        <!-- Tab 1: Parcel Inspector -->
+        <div class="tab-content active" id="inspector-view">
+          <div class="empty-state" id="parcel-empty-state">
+            <i class="ph-bold ph-cursor-click"></i>
+            <h3>No Parcel Selected</h3>
+            <p>Click on any parcel on the map to inspect boundary dimensions, ULPIN, and owner records.</p>
+          </div>
+
+          <div class="parcel-card hidden" id="parcel-details-card">
+            <!-- ULPIN Banner -->
+            <div class="ulpin-banner">
+              <div class="ulpin-header">
+                <span class="ulpin-title">ULPIN (14-Digit Land ID)</span>
+                <span class="status-badge" id="detail-status-badge">PENDING</span>
+              </div>
+              <div class="ulpin-code-container">
+                <span class="ulpin-code" id="detail-ulpin">--</span>
+                <button class="btn-copy" id="btn-copy-ulpin" title="Copy ULPIN">
+                  <i class="ph-bold ph-copy"></i>
+                </button>
+              </div>
+            </div>
+
+            <!-- Property Metadata Grid -->
+            <div class="prop-grid">
+              <div class="prop-item">
+                <span class="prop-label"><i class="ph-bold ph-hash"></i> Survey No</span>
+                <span class="prop-val" id="detail-survey-no">--</span>
+              </div>
+              <div class="prop-item">
+                <span class="prop-label"><i class="ph-bold ph-buildings"></i> Land Use</span>
+                <span class="prop-val" id="detail-land-use">--</span>
+              </div>
+              <div class="prop-item">
+                <span class="prop-label"><i class="ph-bold ph-user"></i> Registered Owner</span>
+                <span class="prop-val" id="detail-owner">--</span>
+              </div>
+              <div class="prop-item">
+                <span class="prop-label"><i class="ph-bold ph-cpu"></i> Source</span>
+                <span class="prop-val" id="detail-source">--</span>
+              </div>
+              <div class="prop-item">
+                <span class="prop-label"><i class="ph-bold ph-ruler"></i> Metric Area</span>
+                <span class="prop-val highlight" id="detail-area">--</span>
+              </div>
+              <div class="prop-item">
+                <span class="prop-label"><i class="ph-bold ph-vector-three"></i> Perimeter</span>
+                <span class="prop-val" id="detail-perimeter">--</span>
+              </div>
+            </div>
+
+            <!-- AI Confidence Meter -->
+            <div class="confidence-meter-container">
+              <div class="meter-header">
+                <span>AI Segmentation Confidence</span>
+                <span id="detail-confidence-val">94%</span>
+              </div>
+              <div class="meter-bar">
+                <div class="meter-fill" id="detail-confidence-bar" style="width: 94%;"></div>
+              </div>
+            </div>
+
+            <!-- Surveyor Verification Workflow -->
+            <div class="surveyor-actions">
+              <h4>Surveyor Approval Action</h4>
+              <div class="action-buttons">
+                <button class="btn btn-success flex-1" id="btn-approve-parcel">
+                  <i class="ph-bold ph-check-circle"></i> Approve
+                </button>
+                <button class="btn btn-danger flex-1" id="btn-reject-parcel">
+                  <i class="ph-bold ph-x-circle"></i> Reject
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab 2: Conflict Resolution Center -->
+        <div class="tab-content" id="conflicts-view">
+          <div class="conflicts-header">
+            <h3>Topology Dispute Matrix</h3>
+            <p>Spatial geometry engine flagged overlapping cadastral boundaries requiring arbitration.</p>
+          </div>
+
+          <div class="conflict-list" id="conflicts-container">
+            <!-- Dynamic conflict cards populated via JS -->
+          </div>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

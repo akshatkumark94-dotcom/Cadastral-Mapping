@@ -1,0 +1,60 @@
+{
+  "type": "FeatureCollection",
+  "name": "cadastral_topology_conflicts",
+  "features": [
+    {
+      "type": "Feature",
+      "id": "CONF-001",
+      "properties": {
+        "conflict_id": "CONF-001",
+        "conflict_type": "OVERLAP_DISPUTE",
+        "severity": "HIGH",
+        "parcels_involved": ["PARCEL-KA-BLR-004", "PARCEL-KA-BLR-005"],
+        "overlap_area_sqm": 122.4,
+        "description": "Boundary overlap between Survey No 103/A and 103/B detected by AI segmenter",
+        "suggested_action": "CLIP_TO_MEDIAN_EDGE",
+        "status": "UNRESOLVED",
+        "detected_at": "2026-02-18T14:32:00Z"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [77.62105, 12.93510],
+            [77.62115, 12.93510],
+            [77.62115, 12.93480],
+            [77.62105, 12.93480],
+            [77.62105, 12.93510]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "CONF-002",
+      "properties": {
+        "conflict_id": "CONF-002",
+        "conflict_type": "SLIVER_GAP",
+        "severity": "MEDIUM",
+        "parcels_involved": ["PARCEL-KA-BLR-001", "PARCEL-KA-BLR-002"],
+        "overlap_area_sqm": 15.8,
+        "description": "Unassigned 30cm sliver corridor detected between adjacent residential boundaries",
+        "suggested_action": "SNAP_NEAREST_VERTEX",
+        "status": "UNRESOLVED",
+        "detected_at": "2026-02-18T15:10:00Z"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [77.62035, 12.93510],
+            [77.62038, 12.93510],
+            [77.62038, 12.93490],
+            [77.62035, 12.93490],
+            [77.62035, 12.93510]
+          ]
+        ]
+      }
+    }
+  ]
+}

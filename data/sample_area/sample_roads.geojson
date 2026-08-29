@@ -1,0 +1,40 @@
+{
+  "type": "FeatureCollection",
+  "name": "cadastral_sample_roads",
+  "features": [
+    {
+      "type": "Feature",
+      "id": "ROAD-001",
+      "properties": {
+        "road_id": "ROAD-001",
+        "name": "17th Main Ring Road",
+        "highway": "secondary",
+        "width_m": 12.0
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [77.61990, 12.93520],
+          [77.62160, 12.93520]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "ROAD-002",
+      "properties": {
+        "road_id": "ROAD-002",
+        "name": "Cross Road 4B",
+        "highway": "residential",
+        "width_m": 7.5
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [77.62072, 12.93520],
+          [77.62072, 12.93440]
+        ]
+      }
+    }
+  ]
+}
