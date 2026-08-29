@@ -39,29 +39,50 @@ class ParcelSegmenter:
         self.mask_generator = None
         self._init_sam_model()
 
+    @property
+    def is_sam_active(self) -> bool:
+        return self.sam is not None and self.mask_generator is not None
+
+    @property
+    def backend_name(self) -> str:
+        if self.is_sam_active:
+            return f"Segment Anything Model (SAM {self.model_type.upper()})"
+        return "OpenCV Adaptive Contour Vectorizer (Fallback Mode)"
+
     def _init_sam_model(self):
         """Attempts to load SAM weights if PyTorch and checkpoint exist."""
-        if SAM_AVAILABLE and self.checkpoint_path.exists():
-            try:
-                device = "cuda" if torch.cuda.is_available() else "cpu"
-                print(f"[ML-Pipeline] Loading SAM model ({self.model_type}) on device '{device}' from {self.checkpoint_path}...")
-                self.sam = sam_model_registry[self.model_type](checkpoint=str(self.checkpoint_path))
-                self.sam.to(device=device)
-                self.mask_generator = SamAutomaticMaskGenerator(
-                    model=self.sam,
-                    points_per_side=32,
-                    pred_iou_thresh=0.86,
-                    stability_score_thresh=0.92,
-                    crop_n_layers=1,
-                    crop_n_points_downscale_factor=2,
-                    min_mask_region_area=100
-                )
-                print("[ML-Pipeline] SAM initialized successfully.")
-            except Exception as e:
-                print(f"[ML-Pipeline] Warning: Could not initialize SAM model: {e}. Using CV fallback.")
-                self.sam = None
-        else:
-            print("[ML-Pipeline] SAM weights not found or segment-anything not installed. Using high-precision CV contour fallback.")
+        if not self.checkpoint_path.exists():
+            print("\n" + "=" * 65)
+            print(f"[ML-Pipeline] SAM Checkpoint '{self.checkpoint_path.name}' NOT found in {self.checkpoint_path.parent}")
+            print("  ℹ️  To activate the deep learning SAM inference engine:")
+            print(f"      run: python scripts/download_sam_weights.py --model {self.model_type}")
+            print("  ⚡ Currently operating in high-precision CV Contour Fallback mode.")
+            print("=" * 65 + "\n")
+            return
+
+        if not SAM_AVAILABLE:
+            print(f"[ML-Pipeline] Checkpoint found at {self.checkpoint_path}, but 'segment_anything' or 'torch' package is not installed.")
+            print("  Install dependencies with: pip install torch torchvision segment-anything")
+            return
+
+        try:
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+            print(f"[ML-Pipeline] Loading SAM model ({self.model_type}) on device '{device}' from {self.checkpoint_path}...")
+            self.sam = sam_model_registry[self.model_type](checkpoint=str(self.checkpoint_path))
+            self.sam.to(device=device)
+            self.mask_generator = SamAutomaticMaskGenerator(
+                model=self.sam,
+                points_per_side=32,
+                pred_iou_thresh=0.86,
+                stability_score_thresh=0.92,
+                crop_n_layers=1,
+                crop_n_points_downscale_factor=2,
+                min_mask_region_area=100
+            )
+            print(f"[ML-Pipeline] SAM ({self.model_type.upper()}) initialized successfully on {device.upper()}.")
+        except Exception as e:
+            print(f"[ML-Pipeline] Warning: Could not initialize SAM model: {e}. Using CV fallback.")
+            self.sam = None
 
     def pixel_to_geo_coords(
         self,
