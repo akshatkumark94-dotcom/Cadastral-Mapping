@@ -4,9 +4,16 @@ Supports Segment Anything Model (SAM) and OpenCV contour-based extraction for sa
 """
 
 import os
+import sys
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
 import numpy as np
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from shapely.geometry import Polygon, mapping
 from ml_pipeline.config import (
     SAM_CHECKPOINT_PATH,
     SAM_CHECKPOINT_TYPE,
@@ -15,6 +22,7 @@ from ml_pipeline.config import (
     REGIONS
 )
 from ml_pipeline.geometry import calculate_metric_metrics, simplify_polygon
+from ml_pipeline.id_generator import generate_ulpin
 
 DEFAULT_BBOX = {
     "min_lat": 28.6480,
@@ -67,9 +75,9 @@ class ParcelSegmenter:
         if not self.checkpoint_path.exists():
             print("\n" + "=" * 65)
             print(f"[ML-Pipeline] SAM Checkpoint '{self.checkpoint_path.name}' NOT found in {self.checkpoint_path.parent}")
-            print("  ℹ️  To activate the deep learning SAM inference engine:")
-            print(f"      run: python scripts/download_sam_weights.py --model {self.model_type}")
-            print("  ⚡ Currently operating in high-precision CV Contour Fallback mode.")
+            print("  [INFO] To activate the deep learning SAM inference engine:")
+            print(f"         run: python scripts/download_sam_weights.py --model {self.model_type}")
+            print("  [MODE] Currently operating in high-precision CV Contour Fallback mode.")
             print("=" * 65 + "\n")
             return
 
@@ -144,11 +152,8 @@ class ParcelSegmenter:
         # Edge-preserving denoising
         denoised = cv2.bilateralFilter(gray, 9, 75, 75)
 
-        # Adaptive thresholding to segment structure boundaries
-        thresh = cv2.adaptiveThreshold(
-            denoised, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-            cv2.THRESH_BINARY_INV, 15, 3
-        )
+        # Otsu thresholding to segment structure boundaries
+        _, thresh = cv2.threshold(denoised, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
 
         # Morphological closing to seal building boundaries
         kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
@@ -186,7 +191,7 @@ class ParcelSegmenter:
                 area_sqm, perimeter_m = calculate_metric_metrics(poly)
 
                 # Skip tiny noise or gigantic frame artifacts
-                if area_sqm < 20.0 or area_sqm > 50000.0:
+                if area_sqm < 10.0 or area_sqm > 500000.0:
                     continue
 
                 ulpin = generate_ulpin(poly, state_code=bbox.get("state_code", "29"), district_code=bbox.get("district_code", "572"))

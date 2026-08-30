@@ -71,18 +71,18 @@ REGIONS: Dict[str, Dict[str, Any]] = {
         "segments": {
             "karol_bagh": {
                 "name": "Karol Bagh",
-                "min_lat": 0.0, "max_lat": 0.0,
-                "min_lon": 0.0, "max_lon": 0.0
+                "min_lat": 28.643638, "max_lat": 28.662016,
+                "min_lon": 77.181103, "max_lon": 77.202842
             },
             "dwarka_sector12": {
                 "name": "Dwarka Sector 12",
-                "min_lat": 0.0, "max_lat": 0.0,
-                "min_lon": 0.0, "max_lon": 0.0
+                "min_lat": 28.587236, "max_lat": 28.597236,
+                "min_lon": 77.035731, "max_lon": 77.045731
             },
             "connaught_place": {
                 "name": "Connaught Place",
-                "min_lat": 0.0, "max_lat": 0.0,
-                "min_lon": 0.0, "max_lon": 0.0
+                "min_lat": 28.611770, "max_lat": 28.651770,
+                "min_lon": 77.199380, "max_lon": 77.239380
             }
         }
     },
@@ -93,13 +93,13 @@ REGIONS: Dict[str, Dict[str, Any]] = {
         "segments": {
             "indirapuram": {
                 "name": "Indirapuram",
-                "min_lat": 0.0, "max_lat": 0.0,
-                "min_lon": 0.0, "max_lon": 0.0
+                "min_lat": 28.632000, "max_lat": 28.652000,
+                "min_lon": 77.360000, "max_lon": 77.385000
             },
             "vaishali": {
                 "name": "Vaishali",
-                "min_lat": 0.0, "max_lat": 0.0,
-                "min_lon": 0.0, "max_lon": 0.0
+                "min_lat": 28.644670, "max_lat": 28.654670,
+                "min_lon": 77.334575, "max_lon": 77.344575
             }
         }
     },
@@ -110,13 +110,13 @@ REGIONS: Dict[str, Dict[str, Any]] = {
         "segments": {
             "civil_lines": {
                 "name": "Civil Lines",
-                "min_lat": 0.0, "max_lat": 0.0,
-                "min_lon": 0.0, "max_lon": 0.0
+                "min_lat": 28.995000, "max_lat": 29.015000,
+                "min_lon": 77.705000, "max_lon": 77.725000
             },
             "shastri_nagar": {
                 "name": "Shastri Nagar",
-                "min_lat": 0.0, "max_lat": 0.0,
-                "min_lon": 0.0, "max_lon": 0.0
+                "min_lat": 28.945323, "max_lat": 28.965323,
+                "min_lon": 77.721966, "max_lon": 77.741966
             }
         }
     },
@@ -127,13 +127,13 @@ REGIONS: Dict[str, Dict[str, Any]] = {
         "segments": {
             "model_town": {
                 "name": "Model Town",
-                "min_lat": 0.0, "max_lat": 0.0,
-                "min_lon": 0.0, "max_lon": 0.0
+                "min_lat": 29.380902, "max_lat": 29.394898,
+                "min_lon": 76.952549, "max_lon": 76.963909
             },
             "sector13_17": {
                 "name": "Sector 13-17",
-                "min_lat": 0.0, "max_lat": 0.0,
-                "min_lon": 0.0, "max_lon": 0.0
+                "min_lat": 29.411247, "max_lat": 29.429369,
+                "min_lon": 76.969426, "max_lon": 76.984080
             }
         }
     }
