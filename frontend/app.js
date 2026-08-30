@@ -1,7 +1,8 @@
 /**
  * Cadastral AI Mapper — Frontend Leaflet & API Controller
  * Smart India Hackathon 2026
- * ENHANCED: Animations, Toasts, Confetti, Micro-interactions
+ * Hierarchical Multi-City & Mini-Segment Support (Delhi, Ghaziabad, Meerut, Panipat)
+ * Rich Aesthetics: Animations, Toasts, Confetti, Micro-interactions
  */
 
 const API_BASE = "http://localhost:8000/api";
@@ -10,27 +11,34 @@ let map;
 let parcelsLayer;
 let conflictsLayer;
 let roadsLayer;
+
 let allParcelsData = null;
 let allConflictsData = null;
 let selectedParcelId = null;
 let activeFilter = "all";
 let searchTerm = "";
 
+let selectedCity = "delhi";
+let selectedSegment = "karol_bagh";
+let regionsCache = [];
+
 let confettiCtx = null;
 let confettiParticles = [];
 let toastIdCounter = 0;
 
-document.addEventListener("DOMContentLoaded", () => {
+document.addEventListener("DOMContentLoaded", async () => {
   initMap();
   initEffects();
   setupEventListeners();
-  loadData();
+  await initHierarchySelectors();
+  await loadDataForCurrentSegment();
 });
 
 function initMap() {
+  // Default centered on Delhi (Karol Bagh)
   map = L.map("map-container", {
-    center: [12.9348, 77.6207],
-    zoom: 17,
+    center: [28.6480, 77.1850],
+    zoom: 16,
     zoomControl: false
   });
 
@@ -89,6 +97,52 @@ function resizeConfetti() {
   }
 }
 
+async function initHierarchySelectors() {
+  const citySelect = document.getElementById("city-select");
+  const segmentSelect = document.getElementById("segment-select");
+  if (!citySelect || !segmentSelect) return;
+
+  try {
+    const res = await fetch(`${API_BASE}/regions`);
+    if (res.ok) {
+      const data = await res.json();
+      regionsCache = data.regions || [];
+
+      if (regionsCache.length > 0) {
+        citySelect.innerHTML = regionsCache.map(r => `
+          <option value="${r.key}" ${r.key === selectedCity ? "selected" : ""}>${r.name}</option>
+        `).join("");
+
+        await updateSegmentDropdown(selectedCity);
+      }
+    }
+  } catch (err) {
+    console.warn("Could not fetch regions hierarchy:", err);
+  }
+}
+
+async function updateSegmentDropdown(cityKey) {
+  const segmentSelect = document.getElementById("segment-select");
+  if (!segmentSelect) return;
+
+  try {
+    const res = await fetch(`${API_BASE}/regions/${cityKey}/segments`);
+    if (res.ok) {
+      const data = await res.json();
+      const segments = data.segments || [];
+
+      if (segments.length > 0) {
+        segmentSelect.innerHTML = segments.map((s, idx) => `
+          <option value="${s.key}" ${idx === 0 ? "selected" : ""}>${s.name}</option>
+        `).join("");
+        selectedSegment = segmentSelect.value;
+      }
+    }
+  } catch (err) {
+    console.warn(`Could not fetch segments for ${cityKey}:`, err);
+  }
+}
+
 function styleParcelFeature(feature) {
   const status = feature.properties.status || "pending";
   const isSelected = feature.id === selectedParcelId;
@@ -141,31 +195,35 @@ function onEachConflictFeature(feature, layer) {
   `);
 }
 
-async function loadData() {
+async function loadDataForCurrentSegment(autoFit = true) {
+  const loader = document.getElementById("map-loading");
+  if (loader) loader.classList.remove("hidden");
+
   try {
     const [parcelsRes, conflictsRes, statsRes] = await Promise.all([
-      fetch(`${API_BASE}/parcels`).then(r => r.json()),
-      fetch(`${API_BASE}/conflicts`).then(r => r.json()),
-      fetch(`${API_BASE}/stats`).then(r => r.json())
+      fetch(`${API_BASE}/parcels?region=${selectedCity}&segment=${selectedSegment}`).then(r => r.json()),
+      fetch(`${API_BASE}/conflicts?region=${selectedCity}&segment=${selectedSegment}`).then(r => r.json()),
+      fetch(`${API_BASE}/stats?region=${selectedCity}&segment=${selectedSegment}`).then(r => r.json())
     ]);
 
     allParcelsData = parcelsRes;
     allConflictsData = conflictsRes;
 
-    renderParcels();
+    renderParcels(autoFit);
     renderConflicts();
     renderStats(statsRes);
   } catch (err) {
-    console.warn("Could not connect to FastAPI backend. Loading embedded sample fallback.", err);
-    showToast("Backend offline — loaded sample dataset", "warning");
-    loadSampleFallback();
+    console.warn("Could not connect to FastAPI backend. Loading sample fallback.", err);
+    showToast("Backend offline — check connection", "warning");
+  } finally {
+    hideMapLoading();
   }
 }
 
-function renderParcels() {
+function renderParcels(autoFit = false) {
   if (!allParcelsData) return;
 
-  const filteredFeatures = allParcelsData.features.filter(f => {
+  const filteredFeatures = (allParcelsData.features || []).filter(f => {
     const matchesFilter = activeFilter === "all" || f.properties.status === activeFilter;
     const matchesSearch = !searchTerm ||
       (f.properties.survey_no && f.properties.survey_no.toLowerCase().includes(searchTerm)) ||
@@ -176,13 +234,24 @@ function renderParcels() {
 
   parcelsLayer.clearLayers();
   parcelsLayer.addData({ type: "FeatureCollection", features: filteredFeatures });
+
+  if (autoFit && filteredFeatures.length > 0) {
+    try {
+      const bounds = parcelsLayer.getBounds();
+      if (bounds.isValid()) {
+        map.fitBounds(bounds, { padding: [40, 40], maxZoom: 18, animate: true, duration: 1 });
+      }
+    } catch (e) {
+      console.warn("Could not fit bounds to parcels:", e);
+    }
+  }
 }
 
 function renderConflicts() {
   if (!allConflictsData) return;
 
   conflictsLayer.clearLayers();
-  const unresolvedConflicts = allConflictsData.features.filter(c => c.properties.status !== "RESOLVED");
+  const unresolvedConflicts = (allConflictsData.features || []).filter(c => c.properties.status !== "RESOLVED");
   conflictsLayer.addData({ type: "FeatureCollection", features: unresolvedConflicts });
 
   const badge = document.getElementById("conflicts-badge");
@@ -193,6 +262,7 @@ function renderConflicts() {
   }
 
   const container = document.getElementById("conflicts-container");
+  if (!container) return;
   container.innerHTML = "";
 
   if (unresolvedConflicts.length === 0) {
@@ -200,7 +270,7 @@ function renderConflicts() {
       <div class="empty-state animate-fadeInUp">
         <i class="ph-bold ph-check-circle" style="color: var(--status-success);"></i>
         <h3>Zero Topology Conflicts</h3>
-        <p>All parcel boundaries conform to strict geometric non-overlapping topological rules.</p>
+        <p>All parcel boundaries in this segment conform to geometric non-overlapping topological rules.</p>
       </div>
     `;
     return;
@@ -258,40 +328,60 @@ function selectParcel(feature) {
 
   const props = feature.properties;
 
-  document.getElementById("parcel-empty-state").classList.add("hidden");
+  const emptyState = document.getElementById("parcel-empty-state");
   const card = document.getElementById("parcel-details-card");
-  card.classList.remove("hidden");
-  card.classList.remove("animate-fadeInUp");
-  void card.offsetWidth;
-  card.classList.add("animate-fadeInUp");
+  if (emptyState) emptyState.classList.add("hidden");
+  if (card) {
+    card.classList.remove("hidden");
+    card.classList.remove("animate-fadeInUp");
+    void card.offsetWidth;
+    card.classList.add("animate-fadeInUp");
+  }
 
   switchTab("inspector-view");
 
-  document.getElementById("detail-ulpin").textContent = props.ulpin || "--";
-  document.getElementById("detail-survey-no").textContent = props.survey_no || "--";
-  document.getElementById("detail-land-use").textContent = props.land_use || "Residential";
-  document.getElementById("detail-owner").textContent = props.owner_name || "Unassigned";
-  document.getElementById("detail-source").textContent = props.source || "AI-SAM";
-  document.getElementById("detail-area").textContent = `${props.area_sqm} m² (${(props.area_sqm / 40.4686).toFixed(2)} Cents)`;
-  document.getElementById("detail-perimeter").textContent = `${props.perimeter_m} m`;
+  const regionEl = document.getElementById("detail-region");
+  const segmentEl = document.getElementById("detail-segment");
+  if (regionEl) regionEl.textContent = props.region_name || props.region || selectedCity.toUpperCase();
+  if (segmentEl) segmentEl.textContent = props.segment_name || props.segment || selectedSegment.toUpperCase();
+
+  const ulpinEl = document.getElementById("detail-ulpin");
+  const surveyEl = document.getElementById("detail-survey-no");
+  const landUseEl = document.getElementById("detail-land-use");
+  const ownerEl = document.getElementById("detail-owner");
+  const sourceEl = document.getElementById("detail-source");
+  const areaEl = document.getElementById("detail-area");
+  const perimeterEl = document.getElementById("detail-perimeter");
+
+  if (ulpinEl) ulpinEl.textContent = props.ulpin || "--";
+  if (surveyEl) surveyEl.textContent = props.survey_no || "--";
+  if (landUseEl) landUseEl.textContent = props.land_use || "Residential";
+  if (ownerEl) ownerEl.textContent = props.owner_name || "Unassigned";
+  if (sourceEl) sourceEl.textContent = props.source || "AI-SAM";
+  if (areaEl) areaEl.textContent = `${props.area_sqm} m² (${(props.area_sqm / 40.4686).toFixed(2)} Cents)`;
+  if (perimeterEl) perimeterEl.textContent = `${props.perimeter_m} m`;
 
   const confScore = Math.round((props.confidence_score || 0.90) * 100);
   const confEl = document.getElementById("detail-confidence-val");
   const confBar = document.getElementById("detail-confidence-bar");
-  confEl.textContent = `${confScore}%`;
-  confBar.style.width = "0%";
-  confBar.className = "meter-fill " + (confScore >= 85 ? "high" : confScore >= 60 ? "medium" : "low");
-  setTimeout(() => { confBar.style.width = `${confScore}%`; }, 100);
+  if (confEl) confEl.textContent = `${confScore}%`;
+  if (confBar) {
+    confBar.style.width = "0%";
+    confBar.className = "meter-fill " + (confScore >= 85 ? "high" : confScore >= 60 ? "medium" : "low");
+    setTimeout(() => { confBar.style.width = `${confScore}%`; }, 100);
+  }
 
   const badge = document.getElementById("detail-status-badge");
-  badge.textContent = props.status || "PENDING";
-  badge.className = `status-badge badge-${props.status || "pending"}`;
+  if (badge) {
+    badge.textContent = (props.status || "pending").toUpperCase();
+    badge.className = `status-badge badge-${props.status || "pending"}`;
+  }
 
   try {
-    const layer = parcelsLayer.getLayers().find(l => l.feature.id === feature.id);
+    const layer = parcelsLayer.getLayers().find(l => l.feature && l.feature.id === feature.id);
     if (layer) {
       const bounds = layer.getBounds();
-      map.flyToBounds(bounds, { padding: [50, 50], duration: 1.2, easeLinearity: 0.25 });
+      map.flyToBounds(bounds, { padding: [50, 50], duration: 1.0, easeLinearity: 0.25 });
     }
   } catch (e) { /* silent */ }
 }
@@ -314,7 +404,7 @@ async function resolveConflict(conflictId, btnEl) {
         btnEl.innerHTML = `<i class="ph-bold ph-check"></i> Resolved`;
       }
       showToast("Conflict resolved successfully", "success");
-      await loadData();
+      await loadDataForCurrentSegment(false);
     } else {
       throw new Error("Resolve failed");
     }
@@ -398,6 +488,7 @@ function triggerConfetti(x, y) {
 function animateConfetti() {
   if (!confettiCtx) return;
   const canvas = document.getElementById("confetti-canvas");
+  if (!canvas) return;
   confettiCtx.clearRect(0, 0, canvas.width, canvas.height);
 
   confettiParticles = confettiParticles.filter(p => {
@@ -424,117 +515,175 @@ function animateConfetti() {
 }
 
 function setupEventListeners() {
+  // City Region Dropdown
+  const citySelect = document.getElementById("city-select");
+  if (citySelect) {
+    citySelect.addEventListener("change", async (e) => {
+      selectedCity = e.target.value;
+      await updateSegmentDropdown(selectedCity);
+      await loadDataForCurrentSegment(true);
+      showToast(`Switched region to ${citySelect.options[citySelect.selectedIndex].text}`, "info");
+    });
+  }
+
+  // Mini-Segment Dropdown
+  const segmentSelect = document.getElementById("segment-select");
+  if (segmentSelect) {
+    segmentSelect.addEventListener("change", async (e) => {
+      selectedSegment = e.target.value;
+      await loadDataForCurrentSegment(true);
+      showToast(`Loaded segment: ${segmentSelect.options[segmentSelect.selectedIndex].text}`, "info");
+    });
+  }
+
+  // Tab buttons
   document.querySelectorAll(".tab-btn").forEach(btn => {
     btn.addEventListener("click", () => { switchTab(btn.dataset.tab); });
   });
 
+  // Filter chips
   document.querySelectorAll(".chip").forEach(chip => {
     chip.addEventListener("click", () => {
       document.querySelectorAll(".chip").forEach(c => c.classList.remove("active"));
       chip.classList.add("active");
       activeFilter = chip.dataset.filter;
-      renderParcels();
+      renderParcels(false);
     });
   });
 
+  // Search box
   const searchInput = document.getElementById("search-input");
-  searchInput.addEventListener("input", (e) => {
-    searchTerm = e.target.value.toLowerCase().trim();
-    renderParcels();
-  });
+  if (searchInput) {
+    searchInput.addEventListener("input", (e) => {
+      searchTerm = e.target.value.toLowerCase().trim();
+      renderParcels(false);
+    });
+  }
 
-  document.getElementById("btn-run-sam").addEventListener("click", async (e) => {
-    const btn = e.currentTarget;
-    const origHtml = btn.innerHTML;
-    btn.innerHTML = `<i class="ph-bold ph-spinner" style="animation: spin 1s infinite linear;"></i> Extracting...`;
-    btn.classList.add("btn-shimmer");
-    showToast("SAM segmentation started — processing drone imagery", "info");
-    try {
-      await fetch(`${API_BASE}/parcels/run-segmentation`, { method: "POST" });
-      await loadData();
-      showToast("Footprint extraction complete", "success");
-    } catch (err) {
-      console.error(err);
-      showToast("Segmentation failed — check backend connection", "error");
-    } finally {
-      btn.innerHTML = origHtml;
-      btn.classList.remove("btn-shimmer");
-    }
-  });
-
-  document.getElementById("btn-run-topology").addEventListener("click", async () => {
-    showToast("Running topology validation matrix...", "info");
-    try {
-      await fetch(`${API_BASE}/conflicts/detect`, { method: "POST" });
-      await loadData();
-      switchTab("conflicts-view");
-      showToast("Topology check complete", "success");
-    } catch (err) {
-      console.error(err);
-      showToast("Topology check failed", "error");
-    }
-  });
-
-  document.getElementById("btn-export-geojson").addEventListener("click", exportGeoJSON);
-  document.getElementById("nav-export").addEventListener("click", exportGeoJSON);
-
-  document.getElementById("nav-home").addEventListener("click", () => { resetWorkspace(); });
-  document.getElementById("scroll-fab").addEventListener("click", () => { resetWorkspace(); });
-
-  document.getElementById("nav-help").addEventListener("click", () => {
-    showToast("Click any parcel on the map to inspect its record, or open the Conflicts tab to arbitrate boundary overlaps.", "info", "About this workspace");
-  });
-
-  document.getElementById("btn-approve-parcel").addEventListener("click", async (e) => {
-    if (!selectedParcelId) return;
-    const rect = e.currentTarget.getBoundingClientRect();
-    triggerConfetti(rect.left + rect.width / 2, rect.top);
-    try {
-      await fetch(`${API_BASE}/parcels/${selectedParcelId}/approve`, { method: "POST" });
-      await loadData();
-      if (allParcelsData) {
-        const updated = allParcelsData.features.find(p => p.id === selectedParcelId);
-        if (updated) selectParcel(updated);
+  // Trigger SAM AI Segmentation
+  const samBtn = document.getElementById("btn-run-sam");
+  if (samBtn) {
+    samBtn.addEventListener("click", async (e) => {
+      const origHtml = samBtn.innerHTML;
+      samBtn.innerHTML = `<i class="ph-bold ph-spinner" style="animation: spin 1s infinite linear;"></i> Extracting...`;
+      samBtn.classList.add("btn-shimmer");
+      showToast(`Extracting AI footprints for ${selectedSegment}...`, "info");
+      try {
+        await fetch(`${API_BASE}/parcels/run-segmentation?region=${selectedCity}&segment=${selectedSegment}`, { method: "POST" });
+        await loadDataForCurrentSegment(true);
+        showToast("Footprint extraction complete", "success");
+      } catch (err) {
+        console.error(err);
+        showToast("Segmentation failed — check backend connection", "error");
+      } finally {
+        samBtn.innerHTML = origHtml;
+        samBtn.classList.remove("btn-shimmer");
       }
-      showToast("Parcel approved and registered", "success");
-    } catch (err) {
-      console.error(err);
-      showToast("Approval failed", "error");
-    }
-  });
+    });
+  }
 
-  document.getElementById("btn-reject-parcel").addEventListener("click", async () => {
-    if (!selectedParcelId) return;
-    try {
-      await fetch(`${API_BASE}/parcels/${selectedParcelId}/reject`, { method: "POST" });
-      await loadData();
-      if (allParcelsData) {
-        const updated = allParcelsData.features.find(p => p.id === selectedParcelId);
-        if (updated) selectParcel(updated);
+  // Trigger Topology Overlap Matrix Check
+  const topoBtn = document.getElementById("btn-run-topology");
+  if (topoBtn) {
+    topoBtn.addEventListener("click", async () => {
+      showToast("Running topology validation matrix...", "info");
+      try {
+        await fetch(`${API_BASE}/conflicts/detect?region=${selectedCity}&segment=${selectedSegment}`, { method: "POST" });
+        await loadDataForCurrentSegment(false);
+        switchTab("conflicts-view");
+        showToast("Topology check complete", "success");
+      } catch (err) {
+        console.error(err);
+        showToast("Topology check failed", "error");
       }
-      showToast("Parcel rejected", "warning");
-    } catch (err) {
-      console.error(err);
-      showToast("Rejection failed", "error");
-    }
-  });
+    });
+  }
 
-  document.getElementById("btn-copy-ulpin").addEventListener("click", (e) => {
-    const code = document.getElementById("detail-ulpin").textContent;
-    navigator.clipboard.writeText(code);
-    const copyBtn = e.currentTarget;
-    copyBtn.classList.add("copied");
-    copyBtn.innerHTML = `<i class="ph-bold ph-check" style="color: #1B7B3F;"></i>`;
-    showToast("ULPIN copied to clipboard", "success");
-    setTimeout(() => {
-      copyBtn.classList.remove("copied");
-      copyBtn.innerHTML = `<i class="ph-bold ph-copy"></i>`;
-    }, 1500);
-  });
+  // Export GeoJSON
+  const exportBtn = document.getElementById("btn-export-geojson");
+  if (exportBtn) exportBtn.addEventListener("click", exportGeoJSON);
+  const navExport = document.getElementById("nav-export");
+  if (navExport) navExport.addEventListener("click", exportGeoJSON);
 
-  document.getElementById("toggle-parcels").addEventListener("click", (e) => { toggleLayer(parcelsLayer, e.currentTarget); });
-  document.getElementById("toggle-conflicts").addEventListener("click", (e) => { toggleLayer(conflictsLayer, e.currentTarget); });
-  document.getElementById("toggle-roads").addEventListener("click", (e) => { toggleLayer(roadsLayer, e.currentTarget); });
+  // Home and Reset view
+  const navHome = document.getElementById("nav-home");
+  if (navHome) navHome.addEventListener("click", () => { resetWorkspace(); });
+  const fab = document.getElementById("scroll-fab");
+  if (fab) fab.addEventListener("click", () => { resetWorkspace(); });
+
+  // Help
+  const helpBtn = document.getElementById("nav-help");
+  if (helpBtn) {
+    helpBtn.addEventListener("click", () => {
+      showToast("Select a City & Mini-Segment to inspect cadastral boundaries, run SAM extraction, or arbitrate topology overlaps.", "info", "About this workspace");
+    });
+  }
+
+  // Approve Parcel
+  const approveBtn = document.getElementById("btn-approve-parcel");
+  if (approveBtn) {
+    approveBtn.addEventListener("click", async (e) => {
+      if (!selectedParcelId) return;
+      const rect = e.currentTarget.getBoundingClientRect();
+      triggerConfetti(rect.left + rect.width / 2, rect.top);
+      try {
+        await fetch(`${API_BASE}/parcels/${selectedParcelId}/approve`, { method: "POST" });
+        await loadDataForCurrentSegment(false);
+        if (allParcelsData) {
+          const updated = (allParcelsData.features || []).find(p => p.id === selectedParcelId);
+          if (updated) selectParcel(updated);
+        }
+        showToast("Parcel approved and registered", "success");
+      } catch (err) {
+        console.error(err);
+        showToast("Approval failed", "error");
+      }
+    });
+  }
+
+  // Reject Parcel
+  const rejectBtn = document.getElementById("btn-reject-parcel");
+  if (rejectBtn) {
+    rejectBtn.addEventListener("click", async () => {
+      if (!selectedParcelId) return;
+      try {
+        await fetch(`${API_BASE}/parcels/${selectedParcelId}/reject`, { method: "POST" });
+        await loadDataForCurrentSegment(false);
+        if (allParcelsData) {
+          const updated = (allParcelsData.features || []).find(p => p.id === selectedParcelId);
+          if (updated) selectParcel(updated);
+        }
+        showToast("Parcel rejected", "warning");
+      } catch (err) {
+        console.error(err);
+        showToast("Rejection failed", "error");
+      }
+    });
+  }
+
+  // Copy ULPIN
+  const copyBtn = document.getElementById("btn-copy-ulpin");
+  if (copyBtn) {
+    copyBtn.addEventListener("click", (e) => {
+      const code = document.getElementById("detail-ulpin").textContent;
+      navigator.clipboard.writeText(code);
+      copyBtn.classList.add("copied");
+      copyBtn.innerHTML = `<i class="ph-bold ph-check" style="color: #1B7B3F;"></i>`;
+      showToast("ULPIN copied to clipboard", "success");
+      setTimeout(() => {
+        copyBtn.classList.remove("copied");
+        copyBtn.innerHTML = `<i class="ph-bold ph-copy"></i>`;
+      }, 1500);
+    });
+  }
+
+  // Layer Toggles
+  const toggleP = document.getElementById("toggle-parcels");
+  if (toggleP) toggleP.addEventListener("click", (e) => { toggleLayer(parcelsLayer, e.currentTarget); });
+  const toggleC = document.getElementById("toggle-conflicts");
+  if (toggleC) toggleC.addEventListener("click", (e) => { toggleLayer(conflictsLayer, e.currentTarget); });
+  const toggleR = document.getElementById("toggle-roads");
+  if (toggleR) toggleR.addEventListener("click", (e) => { toggleLayer(roadsLayer, e.currentTarget); });
 }
 
 function toggleLayer(layer, buttonEl) {
@@ -552,7 +701,7 @@ function exportGeoJSON() {
   const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(allParcelsData, null, 2));
   const downloadAnchor = document.createElement("a");
   downloadAnchor.setAttribute("href", dataStr);
-  downloadAnchor.setAttribute("download", "cadastral_ai_parcels_sih2026.geojson");
+  downloadAnchor.setAttribute("download", `cadastral_parcels_${selectedCity}_${selectedSegment}.geojson`);
   document.body.appendChild(downloadAnchor);
   downloadAnchor.click();
   downloadAnchor.remove();
@@ -560,7 +709,6 @@ function exportGeoJSON() {
 }
 
 function resetWorkspace() {
-  // Clear filters and search
   activeFilter = "all";
   searchTerm = "";
   const searchInput = document.getElementById("search-input");
@@ -568,9 +716,7 @@ function resetWorkspace() {
   document.querySelectorAll(".chip").forEach(c => c.classList.remove("active"));
   const allChip = document.querySelector('.chip[data-filter="all"]');
   if (allChip) allChip.classList.add("active");
-  renderParcels();
 
-  // Clear parcel selection
   selectedParcelId = null;
   parcelsLayer.setStyle(styleParcelFeature);
   const card = document.getElementById("parcel-details-card");
@@ -579,40 +725,10 @@ function resetWorkspace() {
   if (empty) empty.classList.remove("hidden");
   switchTab("inspector-view");
 
-  // Mark Home as the active nav item
   document.querySelectorAll(".gov-nav .nav-item").forEach(n => n.classList.remove("active"));
   const homeBtn = document.getElementById("nav-home");
   if (homeBtn) homeBtn.classList.add("active");
 
-  // Recentre the map
-  if (map) map.flyTo([12.9348, 77.6207], 17, { duration: 1 });
-
+  renderParcels(true);
   showToast("Workspace reset to default view", "info");
-}
-
-function loadSampleFallback() {
-  fetch("../data/sample_area/sample_parcels.geojson")
-    .then(r => r.json())
-    .then(data => {
-      allParcelsData = data;
-      renderParcels();
-      renderStats({
-        total_parcels: data.features.length,
-        approved_parcels: data.features.filter(f => f.properties.status === "approved").length,
-        pending_parcels: data.features.filter(f => f.properties.status === "pending").length,
-        flagged_parcels: data.features.filter(f => f.properties.status === "flagged").length,
-        total_conflicts: 1,
-        total_surveyed_area_hectares: 0.45,
-        ai_confidence_average: 0.92
-      });
-    })
-    .catch(() => {});
-
-  fetch("../data/sample_area/sample_conflicts.geojson")
-    .then(r => r.json())
-    .then(data => {
-      allConflictsData = data;
-      renderConflicts();
-    })
-    .catch(() => {});
 }

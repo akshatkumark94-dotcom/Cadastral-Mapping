@@ -76,6 +76,27 @@
         </div>
 
         <div class="hero-right">
+          <!-- Hierarchy Region & Mini-Segment Selectors -->
+          <div class="hierarchy-selector-group">
+            <div class="gov-select-wrapper">
+              <label for="city-select"><i class="ph-bold ph-buildings"></i> City Region</label>
+              <select id="city-select" class="gov-select" title="Select City Region">
+                <option value="delhi">Delhi</option>
+                <option value="ghaziabad">Ghaziabad</option>
+                <option value="meerut">Meerut</option>
+                <option value="panipat">Panipat</option>
+              </select>
+            </div>
+            <div class="gov-select-wrapper">
+              <label for="segment-select"><i class="ph-bold ph-map-pin"></i> Mini-Segment</label>
+              <select id="segment-select" class="gov-select" title="Select Mini-Segment">
+                <option value="karol_bagh">Karol Bagh</option>
+                <option value="dwarka_sector12">Dwarka Sector 12</option>
+                <option value="connaught_place">Connaught Place</option>
+              </select>
+            </div>
+          </div>
+
           <!-- Quick KPI Counters -->
           <div class="kpi-ribbon">
             <div class="kpi-card" id="kpi-total-parcels">
@@ -195,11 +216,19 @@
             <!-- Property Metadata Grid -->
             <div class="prop-grid">
               <div class="prop-item">
+                <span class="prop-label"><i class="ph-bold ph-buildings"></i> Region / City</span>
+                <span class="prop-val" id="detail-region">--</span>
+              </div>
+              <div class="prop-item">
+                <span class="prop-label"><i class="ph-bold ph-map-pin"></i> Mini-Segment</span>
+                <span class="prop-val" id="detail-segment">--</span>
+              </div>
+              <div class="prop-item">
                 <span class="prop-label"><i class="ph-bold ph-hash"></i> Survey No</span>
                 <span class="prop-val" id="detail-survey-no">--</span>
               </div>
               <div class="prop-item">
-                <span class="prop-label"><i class="ph-bold ph-buildings"></i> Land Use</span>
+                <span class="prop-label"><i class="ph-bold ph-tag"></i> Land Use</span>
                 <span class="prop-val" id="detail-land-use">--</span>
               </div>
               <div class="prop-item">
