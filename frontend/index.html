@@ -3,13 +3,13 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Cadastral AI Mapper — Multi-City Automated Cadastral Intelligence</title>
-  <meta name="description" content="AI-enabled automated cadastral mapping across Delhi, Ghaziabad, Meerut, and Panipat. SAM footprint extraction, topology conflict arbitration, and ULPIN registry for SIH 2026.">
+  <title>Cadastral AI Mapper — Automated Land Parcel & ULPIN Intelligence</title>
+  <meta name="description" content="AI-enabled automated cadastral mapping, SAM boundary extraction, topology conflict resolution, and ULPIN registry for Smart India Hackathon 2026.">
 
-  <!-- Google Fonts: Inter & Outfit -->
+  <!-- Google Fonts: Noto Sans / Roboto Mono (standard NIC/Digital India portal pairing) -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;500;600;700;800&family=Roboto+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 
   <!-- Leaflet CSS & JS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
@@ -21,76 +21,97 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
+  <!-- Tricolour identifier strip — standard marker on Indian government web properties -->
+  <div class="gov-strip" aria-hidden="true"></div>
+
   <div class="app-container">
-    <!-- Top Header -->
-    <header class="app-header">
-      <div class="header-brand">
-        <div class="brand-logo">
-          <i class="ph-bold ph-polygon"></i>
+    <header class="gov-header">
+      <!-- Utility row: emblem, department name, search, accessibility tools -->
+      <div class="header-utility">
+        <div class="utility-brand">
+          <div class="emblem-mark" aria-hidden="true"><i class="ph-bold ph-seal-check"></i></div>
+          <div class="utility-text">
+            <span class="utility-eyebrow">Government of India &middot; Ministry of Rural Development</span>
+            <h1>Department of Land Resources — Cadastral AI Mapper</h1>
+          </div>
         </div>
-        <div class="brand-text">
-          <h1>Cadastral AI Mapper</h1>
-          <span class="badge-tag">SIH 2026 • Multi-City Hierarchy</span>
+
+        <div class="utility-search">
+          <div class="search-box">
+            <i class="ph-bold ph-magnifying-glass"></i>
+            <input type="text" id="search-input" placeholder="Search Survey No / ULPIN / Owner..." />
+          </div>
+        </div>
+
+        <div class="campaign-mark" aria-hidden="true">
+          <i class="ph-bold ph-map-trifold"></i>
+          <div class="campaign-mark-text">
+            <strong>DILRMP</strong>
+            <span>Digital India Land Records</span>
+          </div>
+        </div>
+
+        <div class="utility-icons">
+          <button class="util-icon" title="Skip to main content"><i class="ph-bold ph-sign-in"></i></button>
+          <button class="util-icon lang-toggle" title="हिन्दी में देखें">अ / A</button>
+          <button class="util-icon" title="Accessibility options"><i class="ph-bold ph-person-simple-circle"></i></button>
         </div>
       </div>
 
-      <!-- City & Mini-Segment Two-Level Selector -->
-      <div class="region-selector-bar">
-        <div class="selector-group">
-          <label for="city-select"><i class="ph-bold ph-buildings"></i> City Region:</label>
-          <select id="city-select" class="custom-select">
-            <option value="delhi">Delhi</option>
-            <option value="ghaziabad">Ghaziabad</option>
-            <option value="meerut">Meerut</option>
-            <option value="panipat">Panipat</option>
-          </select>
+      <!-- Site navigation -->
+      <nav class="gov-nav" aria-label="Primary">
+        <button class="nav-item active" id="nav-home" title="Reset filters and return to overview">Home</button>
+        <button class="nav-item tab-btn" data-tab="inspector-view" title="Open the parcel inspector">Parcel Inspector</button>
+        <button class="nav-item tab-btn" data-tab="conflicts-view" title="Open the conflict resolution centre">Conflicts</button>
+        <button class="nav-item" id="nav-export" title="Download the current parcel dataset">Export Data</button>
+        <button class="nav-item" id="nav-help" title="About this tool">Help</button>
+      </nav>
+
+      <!-- Hero / page-title band -->
+      <div class="hero-band">
+        <div class="hero-left">
+          <span class="breadcrumb"><i class="ph-bold ph-house"></i> Home <span class="crumb-sep">/</span> Cadastral Workspace</span>
+          <h2 class="hero-title">Automated Land Parcel &amp; ULPIN Intelligence</h2>
+          <span class="hero-tag">Smart India Hackathon 2026 &middot; DILRMP / Bhuvan Standard</span>
         </div>
 
-        <div class="selector-divider">/</div>
+        <div class="hero-right">
+          <!-- Quick KPI Counters -->
+          <div class="kpi-ribbon">
+            <div class="kpi-card" id="kpi-total-parcels">
+              <span class="kpi-label">Parcels</span>
+              <span class="kpi-value" id="val-parcels">--</span>
+            </div>
+            <div class="kpi-card" id="kpi-area">
+              <span class="kpi-label">Area (Ha)</span>
+              <span class="kpi-value text-accent" id="val-area">--</span>
+            </div>
+            <div class="kpi-card" id="kpi-conflicts">
+              <span class="kpi-label">Conflicts</span>
+              <span class="kpi-value text-danger" id="val-conflicts">--</span>
+            </div>
+            <div class="kpi-card" id="kpi-confidence">
+              <span class="kpi-label">AI Confidence</span>
+              <span class="kpi-value text-success" id="val-confidence">--</span>
+            </div>
+          </div>
 
-        <div class="selector-group">
-          <label for="segment-select"><i class="ph-bold ph-map-pin"></i> Mini-Segment:</label>
-          <select id="segment-select" class="custom-select">
-            <!-- Dynamically populated via app.js -->
-            <option value="karol_bagh">Karol Bagh</option>
-          </select>
+          <!-- Action Toolbar -->
+          <div class="header-actions">
+            <button id="btn-run-sam" class="btn btn-primary" title="Trigger SAM / AI Boundary Extraction">
+              <i class="ph-bold ph-sparkle"></i>
+              <span>Extract Footprints</span>
+            </button>
+            <button id="btn-run-topology" class="btn btn-secondary" title="Run live topology validation matrix">
+              <i class="ph-bold ph-arrows-merge"></i>
+              <span>Check Overlaps</span>
+            </button>
+            <button id="btn-export-geojson" class="btn btn-outline" title="Export GeoJSON Dataset">
+              <i class="ph-bold ph-download-simple"></i>
+              <span>Export</span>
+            </button>
+          </div>
         </div>
-      </div>
-
-      <!-- Quick KPI Counters (Scoped to Selected Mini-Segment) -->
-      <div class="kpi-ribbon">
-        <div class="kpi-card" id="kpi-total-parcels">
-          <span class="kpi-label">Parcels</span>
-          <span class="kpi-value" id="val-parcels">--</span>
-        </div>
-        <div class="kpi-card" id="kpi-area">
-          <span class="kpi-label">Area (Ha)</span>
-          <span class="kpi-value text-accent" id="val-area">--</span>
-        </div>
-        <div class="kpi-card" id="kpi-conflicts">
-          <span class="kpi-label">Conflicts</span>
-          <span class="kpi-value text-danger" id="val-conflicts">--</span>
-        </div>
-        <div class="kpi-card" id="kpi-confidence">
-          <span class="kpi-label">AI Confidence</span>
-          <span class="kpi-value text-success" id="val-confidence">--</span>
-        </div>
-      </div>
-
-      <!-- Action Toolbar -->
-      <div class="header-actions">
-        <button id="btn-run-sam" class="btn btn-primary" title="Trigger SAM / AI Boundary Extraction for current segment">
-          <i class="ph-bold ph-sparkle"></i>
-          <span>Extract Footprints</span>
-        </button>
-        <button id="btn-run-topology" class="btn btn-secondary" title="Run live topology validation for current segment">
-          <i class="ph-bold ph-arrows-merge"></i>
-          <span>Check Overlaps</span>
-        </button>
-        <button id="btn-export-geojson" class="btn btn-outline" title="Export GeoJSON Dataset">
-          <i class="ph-bold ph-download-simple"></i>
-          <span>Export</span>
-        </button>
       </div>
     </header>
 
@@ -98,13 +119,14 @@
     <div class="main-workspace">
       <!-- Leaflet Map Viewport -->
       <div class="map-viewport" id="map-container">
+        <!-- Map Loading Overlay -->
+        <div class="map-loading" id="map-loading">
+          <div class="map-loading-spinner"></div>
+          <span>Loading cadastral imagery…</span>
+        </div>
+
         <!-- Floating Layer / Filter Quick Bar -->
         <div class="map-overlay-controls">
-          <div class="search-box">
-            <i class="ph-bold ph-magnifying-glass"></i>
-            <input type="text" id="search-input" placeholder="Search Survey No / ULPIN / Owner..." />
-          </div>
-
           <div class="filter-chips">
             <button class="chip active" data-filter="all">All</button>
             <button class="chip" data-filter="approved">Approved</button>
@@ -173,19 +195,11 @@
             <!-- Property Metadata Grid -->
             <div class="prop-grid">
               <div class="prop-item">
-                <span class="prop-label"><i class="ph-bold ph-buildings"></i> Region / City</span>
-                <span class="prop-val" id="detail-region">--</span>
-              </div>
-              <div class="prop-item">
-                <span class="prop-label"><i class="ph-bold ph-map-pin"></i> Mini-Segment</span>
-                <span class="prop-val" id="detail-segment">--</span>
-              </div>
-              <div class="prop-item">
                 <span class="prop-label"><i class="ph-bold ph-hash"></i> Survey No</span>
                 <span class="prop-val" id="detail-survey-no">--</span>
               </div>
               <div class="prop-item">
-                <span class="prop-label"><i class="ph-bold ph-tag"></i> Land Use</span>
+                <span class="prop-label"><i class="ph-bold ph-buildings"></i> Land Use</span>
                 <span class="prop-val" id="detail-land-use">--</span>
               </div>
               <div class="prop-item">
@@ -246,6 +260,17 @@
       </aside>
     </div>
   </div>
+
+  <!-- Toast Notification Stack -->
+  <div class="toast-container" id="toast-container"></div>
+
+  <!-- Confetti Overlay Canvas -->
+  <canvas id="confetti-canvas" class="confetti-canvas"></canvas>
+
+  <!-- Floating action button — resets the workspace to its default view -->
+  <button class="scroll-fab" id="scroll-fab" title="Reset view">
+    <i class="ph-bold ph-arrow-counter-clockwise"></i>
+  </button>
 
   <script src="app.js"></script>
 </body>

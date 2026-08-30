@@ -1,12 +1,11 @@
 /**
- * Cadastral AI Mapper — Frontend Leaflet & Multi-City API Controller
+ * Cadastral AI Mapper — Frontend Leaflet & API Controller
  * Smart India Hackathon 2026
- * Supports Hierarchical Region (City) -> Mini-Segment (Sub-area) -> Parcels
+ * ENHANCED: Animations, Toasts, Confetti, Micro-interactions
  */
 
 const API_BASE = "http://localhost:8000/api";
 
-// Application State
 let map;
 let parcelsLayer;
 let conflictsLayer;
@@ -17,53 +16,37 @@ let selectedParcelId = null;
 let activeFilter = "all";
 let searchTerm = "";
 
-// Hierarchical Region State
-let selectedCity = "delhi";
-let selectedSegment = "karol_bagh";
-let regionsCache = [];
+let confettiCtx = null;
+let confettiParticles = [];
+let toastIdCounter = 0;
 
-// Initialize Application on DOM Load
 document.addEventListener("DOMContentLoaded", () => {
   initMap();
+  initEffects();
   setupEventListeners();
-  loadRegionsHierarchy();
+  loadData();
 });
 
-/**
- * Initializes Leaflet map and base tile layers.
- */
 function initMap() {
   map = L.map("map-container", {
-    center: [28.6400, 77.2000],
+    center: [12.9348, 77.6207],
     zoom: 17,
     zoomControl: false
   });
 
   L.control.zoom({ position: "bottomright" }).addTo(map);
 
-  // Basemap Providers
   const esriSatellite = L.tileLayer(
     "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-    {
-      attribution: "Tiles &copy; Esri &mdash; High-Res Satellite Imagery",
-      maxZoom: 19
-    }
+    { attribution: "Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community", maxZoom: 19 }
   );
-
   const cartoDark = L.tileLayer(
     "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
-    {
-      attribution: "&copy; <a href='https://carto.com/'>CARTO</a>",
-      maxZoom: 19
-    }
+    { attribution: "&copy; <a href='https://carto.com/'>CARTO</a>", maxZoom: 19 }
   );
-
   const osmStandard = L.tileLayer(
     "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
-    {
-      attribution: "&copy; OpenStreetMap contributors",
-      maxZoom: 19
-    }
+    { attribution: "&copy; OpenStreetMap contributors", maxZoom: 19 }
   );
 
   esriSatellite.addTo(map);
@@ -73,111 +56,52 @@ function initMap() {
     "Carto Dark GIS": cartoDark,
     "OpenStreetMap": osmStandard
   };
-
   L.control.layers(baseMaps, null, { position: "topright" }).addTo(map);
 
-  // Initialize Layer Groups
-  parcelsLayer = L.geoJSON(null, {
-    style: styleParcelFeature,
-    onEachFeature: onEachParcelFeature
-  }).addTo(map);
+  parcelsLayer = L.geoJSON(null, { style: styleParcelFeature, onEachFeature: onEachParcelFeature }).addTo(map);
+  conflictsLayer = L.geoJSON(null, { style: styleConflictFeature, onEachFeature: onEachConflictFeature }).addTo(map);
+  roadsLayer = L.geoJSON(null, { style: { color: "#7C8A99", weight: 3, opacity: 0.7, dashArray: "4, 4" } }).addTo(map);
 
-  conflictsLayer = L.geoJSON(null, {
-    style: styleConflictFeature,
-    onEachFeature: onEachConflictFeature
-  }).addTo(map);
-
-  roadsLayer = L.geoJSON(null, {
-    style: {
-      color: "#94a3b8",
-      weight: 3,
-      opacity: 0.7,
-      dashArray: "4, 4"
-    }
-  }).addTo(map);
+  map.on("load", () => { hideMapLoading(); });
+  setTimeout(hideMapLoading, 1500);
 }
 
-/**
- * Loads list of all configured city regions from backend and populates the City selector.
- */
-async function loadRegionsHierarchy() {
-  try {
-    const res = await fetch(`${API_BASE}/regions`).then(r => r.json());
-    regionsCache = res.regions || [];
+function hideMapLoading() {
+  const loader = document.getElementById("map-loading");
+  if (loader) loader.classList.add("hidden");
+}
 
-    const citySelect = document.getElementById("city-select");
-    citySelect.innerHTML = "";
-
-    regionsCache.forEach(reg => {
-      const opt = document.createElement("option");
-      opt.value = reg.key;
-      opt.textContent = `${reg.name} (${reg.segment_count} Segments)`;
-      citySelect.appendChild(opt);
-    });
-
-    if (regionsCache.length > 0) {
-      selectedCity = regionsCache[0].key;
-      citySelect.value = selectedCity;
-      await updateSegmentDropdown(selectedCity);
-    }
-  } catch (err) {
-    console.warn("Could not fetch /api/regions from backend. Using static fallback.", err);
-    setupStaticRegionsFallback();
+function initEffects() {
+  const canvas = document.getElementById("confetti-canvas");
+  if (canvas) {
+    confettiCtx = canvas.getContext("2d");
+    resizeConfetti();
+    window.addEventListener("resize", resizeConfetti);
+    requestAnimationFrame(animateConfetti);
   }
 }
 
-/**
- * Updates the Mini-Segment dropdown options based on the chosen city region.
- */
-async function updateSegmentDropdown(cityKey) {
-  try {
-    const res = await fetch(`${API_BASE}/regions/${cityKey}/segments`).then(r => r.json());
-    const segments = res.segments || [];
-
-    const segmentSelect = document.getElementById("segment-select");
-    segmentSelect.innerHTML = "";
-
-    segments.forEach(seg => {
-      const opt = document.createElement("option");
-      opt.value = seg.key;
-      opt.textContent = seg.name;
-      segmentSelect.appendChild(opt);
-    });
-
-    if (segments.length > 0) {
-      selectedSegment = segments[0].key;
-      segmentSelect.value = selectedSegment;
-    }
-
-    await loadDataForCurrentSegment();
-  } catch (err) {
-    console.warn("Could not fetch segments for city", cityKey, err);
+function resizeConfetti() {
+  const canvas = document.getElementById("confetti-canvas");
+  if (canvas) {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
   }
 }
 
-/**
- * Styling logic for Cadastral Parcel Polygons.
- */
 function styleParcelFeature(feature) {
   const status = feature.properties.status || "pending";
   const isSelected = feature.id === selectedParcelId;
 
-  let color = "#f59e0b"; // Pending default (amber)
-  let fillColor = "#f59e0b";
+  let color = "#B4690E";
+  let fillColor = "#B4690E";
 
-  if (status === "approved") {
-    color = "#10b981";
-    fillColor = "#10b981";
-  } else if (status === "flagged") {
-    color = "#ef4444";
-    fillColor = "#ef4444";
-  } else if (status === "rejected") {
-    color = "#6b7280";
-    fillColor = "#4b5563";
-  }
+  if (status === "approved") { color = "#1B7B3F"; fillColor = "#1B7B3F"; }
+  else if (status === "flagged") { color = "#B3261E"; fillColor = "#B3261E"; }
+  else if (status === "rejected") { color = "#6B7683"; fillColor = "#5A6570"; }
 
   return {
-    color: isSelected ? "#06b6d4" : color,
+    color: isSelected ? "#0B3D6E" : color,
     weight: isSelected ? 3 : 2,
     opacity: 0.9,
     fillColor: fillColor,
@@ -186,73 +110,43 @@ function styleParcelFeature(feature) {
   };
 }
 
-/**
- * Styling logic for Overlay Conflict Polygons.
- */
 function styleConflictFeature(feature) {
-  return {
-    color: "#ff0055",
-    weight: 2,
-    opacity: 1.0,
-    fillColor: "#ff0055",
-    fillOpacity: 0.5,
-    dashArray: "4, 4"
-  };
+  return { color: "#7A1B14", weight: 2, opacity: 1.0, fillColor: "#B3261E", fillOpacity: 0.5, dashArray: "4, 4" };
 }
 
-/**
- * Event binding on parcel features.
- */
 function onEachParcelFeature(feature, layer) {
   layer.on({
-    click: (e) => {
-      L.DomEvent.stopPropagation(e);
-      selectParcel(feature);
-    },
-    mouseover: () => {
-      layer.setStyle({ fillOpacity: 0.5 });
-    },
-    mouseout: () => {
-      if (feature.id !== selectedParcelId) {
-        layer.setStyle({ fillOpacity: 0.25 });
-      }
-    }
+    click: (e) => { L.DomEvent.stopPropagation(e); selectParcel(feature); },
+    mouseover: () => { layer.setStyle({ fillOpacity: 0.5, weight: 3 }); },
+    mouseout: () => { if (feature.id !== selectedParcelId) layer.setStyle({ fillOpacity: 0.25, weight: 2 }); }
   });
 
   const props = feature.properties;
   layer.bindTooltip(
-    `<strong>${props.segment_name || props.segment || "Segment"}</strong><br><strong>Survey No:</strong> ${props.survey_no}<br><strong>ULPIN:</strong> ${props.ulpin}<br><strong>Area:</strong> ${props.area_sqm} m²`,
+    `<strong>Survey No:</strong> ${props.survey_no}<br><strong>ULPIN:</strong> ${props.ulpin}<br><strong>Area:</strong> ${props.area_sqm} m²`,
     { sticky: true, className: "custom-leaflet-tooltip" }
   );
 }
 
-/**
- * Event binding on conflict overlay features.
- */
 function onEachConflictFeature(feature, layer) {
   const props = feature.properties;
   layer.bindPopup(`
-    <div style="color: #111;">
-      <h4 style="color: #ef4444; margin-bottom: 4px;">⚠️ ${props.conflict_type || "OVERLAP CONFLICT"}</h4>
-      <p style="font-size: 11px; margin-bottom: 4px;">${props.description}</p>
-      <span style="font-size: 10px; font-weight: bold; background: #fee2e2; color: #991b1b; padding: 2px 6px; border-radius: 4px;">
+    <div style="color: #14212E; font-family: 'Noto Sans', sans-serif;">
+      <h4 style="color: #B3261E; margin-bottom: 4px;">⚠️ ${props.conflict_type || "OVERLAP CONFLICT"}</h4>
+      <p style="font-size: 11px; margin-bottom: 6px;">${props.description}</p>
+      <span style="font-size: 10px; font-weight: bold; background: #FDE9D2; color: #8A4A0E; padding: 2px 6px; border-radius: 4px;">
         Overlap Area: ${props.overlap_area_sqm} m²
       </span>
     </div>
   `);
 }
 
-/**
- * Loads parcels, conflicts, and KPI stats scoped to the currently selected City & Mini-Segment.
- */
-async function loadDataForCurrentSegment() {
+async function loadData() {
   try {
-    const urlParams = `region=${encodeURIComponent(selectedCity)}&segment=${encodeURIComponent(selectedSegment)}`;
-
     const [parcelsRes, conflictsRes, statsRes] = await Promise.all([
-      fetch(`${API_BASE}/parcels?${urlParams}`).then(r => r.json()),
-      fetch(`${API_BASE}/conflicts?${urlParams}`).then(r => r.json()),
-      fetch(`${API_BASE}/stats?${urlParams}`).then(r => r.json())
+      fetch(`${API_BASE}/parcels`).then(r => r.json()),
+      fetch(`${API_BASE}/conflicts`).then(r => r.json()),
+      fetch(`${API_BASE}/stats`).then(r => r.json())
     ]);
 
     allParcelsData = parcelsRes;
@@ -261,19 +155,13 @@ async function loadDataForCurrentSegment() {
     renderParcels();
     renderConflicts();
     renderStats(statsRes);
-
-    // Auto-focus / re-center map to the bounds of the loaded segment features
-    if (parcelsLayer.getLayers().length > 0) {
-      map.fitBounds(parcelsLayer.getBounds(), { padding: [40, 40], maxZoom: 18 });
-    }
   } catch (err) {
-    console.warn("Could not connect to FastAPI backend.", err);
+    console.warn("Could not connect to FastAPI backend. Loading embedded sample fallback.", err);
+    showToast("Backend offline — loaded sample dataset", "warning");
+    loadSampleFallback();
   }
 }
 
-/**
- * Renders parcels onto the map applying active filters.
- */
 function renderParcels() {
   if (!allParcelsData) return;
 
@@ -287,45 +175,42 @@ function renderParcels() {
   });
 
   parcelsLayer.clearLayers();
-  parcelsLayer.addData({
-    type: "FeatureCollection",
-    features: filteredFeatures
-  });
+  parcelsLayer.addData({ type: "FeatureCollection", features: filteredFeatures });
 }
 
-/**
- * Renders conflict polygons and sidebar cards for the active mini-segment.
- */
 function renderConflicts() {
   if (!allConflictsData) return;
 
   conflictsLayer.clearLayers();
   const unresolvedConflicts = allConflictsData.features.filter(c => c.properties.status !== "RESOLVED");
-  conflictsLayer.addData({
-    type: "FeatureCollection",
-    features: unresolvedConflicts
-  });
+  conflictsLayer.addData({ type: "FeatureCollection", features: unresolvedConflicts });
 
-  document.getElementById("conflicts-badge").textContent = unresolvedConflicts.length;
+  const badge = document.getElementById("conflicts-badge");
+  if (badge) {
+    badge.textContent = unresolvedConflicts.length;
+    badge.classList.add("counting");
+    setTimeout(() => badge.classList.remove("counting"), 500);
+  }
 
   const container = document.getElementById("conflicts-container");
   container.innerHTML = "";
 
   if (unresolvedConflicts.length === 0) {
     container.innerHTML = `
-      <div class="empty-state">
+      <div class="empty-state animate-fadeInUp">
         <i class="ph-bold ph-check-circle" style="color: var(--status-success);"></i>
         <h3>Zero Topology Conflicts</h3>
-        <p>All parcel boundaries in <strong>${selectedSegment.replace('_', ' ').title()}</strong> conform to strict topological rules.</p>
+        <p>All parcel boundaries conform to strict geometric non-overlapping topological rules.</p>
       </div>
     `;
     return;
   }
 
-  unresolvedConflicts.forEach(conf => {
+  unresolvedConflicts.forEach((conf, index) => {
     const props = conf.properties;
     const card = document.createElement("div");
     card.className = `conflict-card ${props.severity === "HIGH" ? "high-severity" : ""}`;
+    card.style.animationDelay = `${index * 0.08}s`;
     card.innerHTML = `
       <div class="conflict-card-header">
         <span class="conflict-title">${props.conflict_type}</span>
@@ -333,7 +218,7 @@ function renderConflicts() {
       </div>
       <div class="conflict-desc">${props.description}</div>
       <div class="conflict-meta">Overlap Area: ${props.overlap_area_sqm} sq.m</div>
-      <button class="btn-resolve" onclick="resolveConflict('${conf.id}')">
+      <button class="btn-resolve" onclick="resolveConflict('${conf.id}', this)">
         <i class="ph-bold ph-magic-wand"></i> Auto-Clip Boundary Overlap
       </button>
     `;
@@ -341,20 +226,32 @@ function renderConflicts() {
   });
 }
 
-/**
- * Updates header KPI counters for current segment.
- */
 function renderStats(stats) {
   if (!stats) return;
-  document.getElementById("val-parcels").textContent = stats.total_parcels;
-  document.getElementById("val-area").textContent = stats.total_surveyed_area_hectares;
-  document.getElementById("val-conflicts").textContent = stats.total_conflicts;
-  document.getElementById("val-confidence").textContent = `${Math.round(stats.ai_confidence_average * 100)}%`;
+  animateCounter("val-parcels", stats.total_parcels || 0);
+  animateCounter("val-area", stats.total_surveyed_area_hectares || 0, 2);
+  animateCounter("val-conflicts", stats.total_conflicts || 0);
+  animateCounter("val-confidence", Math.round((stats.ai_confidence_average || 0) * 100), 0, "%");
 }
 
-/**
- * Selects a parcel and populates the Parcel Inspector sidebar.
- */
+function animateCounter(elementId, targetValue, decimals = 0, suffix = "") {
+  const el = document.getElementById(elementId);
+  if (!el) return;
+  const startValue = parseFloat(el.textContent) || 0;
+  const duration = 800;
+  const startTime = performance.now();
+
+  function update(currentTime) {
+    const elapsed = currentTime - startTime;
+    const progress = Math.min(elapsed / duration, 1);
+    const easeOut = 1 - Math.pow(1 - progress, 3);
+    const current = startValue + (targetValue - startValue) * easeOut;
+    el.textContent = decimals > 0 ? current.toFixed(decimals) + suffix : Math.round(current) + suffix;
+    if (progress < 1) requestAnimationFrame(update);
+  }
+  requestAnimationFrame(update);
+}
+
 function selectParcel(feature) {
   selectedParcelId = feature.id;
   parcelsLayer.setStyle(styleParcelFeature);
@@ -362,12 +259,14 @@ function selectParcel(feature) {
   const props = feature.properties;
 
   document.getElementById("parcel-empty-state").classList.add("hidden");
-  document.getElementById("parcel-details-card").classList.remove("hidden");
+  const card = document.getElementById("parcel-details-card");
+  card.classList.remove("hidden");
+  card.classList.remove("animate-fadeInUp");
+  void card.offsetWidth;
+  card.classList.add("animate-fadeInUp");
 
   switchTab("inspector-view");
 
-  document.getElementById("detail-region").textContent = props.region_name || props.region || selectedCity.toUpperCase();
-  document.getElementById("detail-segment").textContent = props.segment_name || props.segment || selectedSegment.toUpperCase();
   document.getElementById("detail-ulpin").textContent = props.ulpin || "--";
   document.getElementById("detail-survey-no").textContent = props.survey_no || "--";
   document.getElementById("detail-land-use").textContent = props.land_use || "Residential";
@@ -377,70 +276,158 @@ function selectParcel(feature) {
   document.getElementById("detail-perimeter").textContent = `${props.perimeter_m} m`;
 
   const confScore = Math.round((props.confidence_score || 0.90) * 100);
-  document.getElementById("detail-confidence-val").textContent = `${confScore}%`;
-  document.getElementById("detail-confidence-bar").style.width = `${confScore}%`;
+  const confEl = document.getElementById("detail-confidence-val");
+  const confBar = document.getElementById("detail-confidence-bar");
+  confEl.textContent = `${confScore}%`;
+  confBar.style.width = "0%";
+  confBar.className = "meter-fill " + (confScore >= 85 ? "high" : confScore >= 60 ? "medium" : "low");
+  setTimeout(() => { confBar.style.width = `${confScore}%`; }, 100);
 
   const badge = document.getElementById("detail-status-badge");
   badge.textContent = props.status || "PENDING";
   badge.className = `status-badge badge-${props.status || "pending"}`;
+
+  try {
+    const layer = parcelsLayer.getLayers().find(l => l.feature.id === feature.id);
+    if (layer) {
+      const bounds = layer.getBounds();
+      map.flyToBounds(bounds, { padding: [50, 50], duration: 1.2, easeLinearity: 0.25 });
+    }
+  } catch (e) { /* silent */ }
 }
 
-/**
- * Resolves an active topology conflict.
- */
-async function resolveConflict(conflictId) {
+async function resolveConflict(conflictId, btnEl) {
+  if (btnEl) {
+    btnEl.classList.add("resolving");
+    btnEl.innerHTML = `<i class="ph-bold ph-spinner" style="animation: spin 1s linear infinite;"></i> Resolving...`;
+  }
   try {
     const res = await fetch(`${API_BASE}/conflicts/${conflictId}/resolve`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        resolution_method: "CLIP_TO_MEDIAN_EDGE"
-      })
+      body: JSON.stringify({ resolution_method: "CLIP_TO_MEDIAN_EDGE" })
     });
     if (res.ok) {
-      await loadDataForCurrentSegment();
+      if (btnEl) {
+        btnEl.classList.remove("resolving");
+        btnEl.classList.add("resolved");
+        btnEl.innerHTML = `<i class="ph-bold ph-check"></i> Resolved`;
+      }
+      showToast("Conflict resolved successfully", "success");
+      await loadData();
+    } else {
+      throw new Error("Resolve failed");
     }
   } catch (err) {
     console.error("Error resolving conflict:", err);
+    showToast("Failed to resolve conflict", "error");
+    if (btnEl) {
+      btnEl.classList.remove("resolving");
+      btnEl.innerHTML = `<i class="ph-bold ph-magic-wand"></i> Auto-Clip Boundary Overlap`;
+    }
   }
 }
 
-/**
- * Tab switching helper.
- */
 function switchTab(targetTabId) {
   document.querySelectorAll(".tab-btn").forEach(btn => {
     btn.classList.toggle("active", btn.dataset.tab === targetTabId);
   });
+  const homeBtn = document.getElementById("nav-home");
+  if (homeBtn) homeBtn.classList.remove("active");
   document.querySelectorAll(".tab-content").forEach(content => {
-    content.classList.toggle("active", content.id === targetTabId);
+    const isActive = content.id === targetTabId;
+    if (isActive) {
+      content.classList.add("active");
+      content.style.animation = "none";
+      void content.offsetWidth;
+      content.style.animation = "";
+    } else {
+      content.classList.remove("active");
+    }
   });
 }
 
-/**
- * Setup event listeners for toolbar, city dropdown, search, and action buttons.
- */
-function setupEventListeners() {
-  // City Region Dropdown Change
-  document.getElementById("city-select").addEventListener("change", async (e) => {
-    selectedCity = e.target.value;
-    await updateSegmentDropdown(selectedCity);
-  });
+function showToast(message, type = "info", title = "") {
+  const container = document.getElementById("toast-container");
+  if (!container) return;
 
-  // Mini-Segment Dropdown Change
-  document.getElementById("segment-select").addEventListener("change", async (e) => {
-    selectedSegment = e.target.value;
-    await loadDataForCurrentSegment();
-  });
+  const icons = { success: "ph-check-circle", error: "ph-x-circle", warning: "ph-warning", info: "ph-info" };
+  const titles = { success: title || "Success", error: title || "Error", warning: title || "Warning", info: title || "Info" };
 
-  // Tab Navigation
-  document.querySelectorAll(".tab-btn").forEach(btn => {
-    btn.addEventListener("click", () => {
-      switchTab(btn.dataset.tab);
+  const toast = document.createElement("div");
+  toast.className = `toast ${type}`;
+  toast.id = `toast-${++toastIdCounter}`;
+  toast.innerHTML = `
+    <i class="ph-bold ${icons[type]} toast-icon"></i>
+    <div class="toast-content">
+      <div class="toast-title">${titles[type]}</div>
+      <div class="toast-message">${message}</div>
+    </div>
+    <button class="toast-close" onclick="removeToast('${toast.id}')"><i class="ph-bold ph-x"></i></button>
+  `;
+
+  container.appendChild(toast);
+  setTimeout(() => removeToast(toast.id), 4000);
+}
+
+function removeToast(id) {
+  const toast = document.getElementById(id);
+  if (!toast) return;
+  toast.classList.add("removing");
+  setTimeout(() => toast.remove(), 300);
+}
+
+function triggerConfetti(x, y) {
+  const colors = ["#0B3D6E", "#E17A1F", "#1B7B3F", "#B3261E", "#5B3E8E", "#6B7683"];
+  for (let i = 0; i < 60; i++) {
+    confettiParticles.push({
+      x: x || window.innerWidth / 2,
+      y: y || window.innerHeight / 2,
+      vx: (Math.random() - 0.5) * 12,
+      vy: (Math.random() - 1) * 12 - 4,
+      life: 1,
+      decay: 0.01 + Math.random() * 0.02,
+      size: 3 + Math.random() * 5,
+      color: colors[Math.floor(Math.random() * colors.length)],
+      rotation: Math.random() * 360,
+      rotationSpeed: (Math.random() - 0.5) * 10
     });
+  }
+}
+
+function animateConfetti() {
+  if (!confettiCtx) return;
+  const canvas = document.getElementById("confetti-canvas");
+  confettiCtx.clearRect(0, 0, canvas.width, canvas.height);
+
+  confettiParticles = confettiParticles.filter(p => {
+    p.x += p.vx;
+    p.y += p.vy;
+    p.vy += 0.3;
+    p.life -= p.decay;
+    p.rotation += p.rotationSpeed;
+
+    if (p.life > 0) {
+      confettiCtx.save();
+      confettiCtx.translate(p.x, p.y);
+      confettiCtx.rotate((p.rotation * Math.PI) / 180);
+      confettiCtx.globalAlpha = p.life;
+      confettiCtx.fillStyle = p.color;
+      confettiCtx.fillRect(-p.size / 2, -p.size / 2, p.size, p.size);
+      confettiCtx.restore();
+      return true;
+    }
+    return false;
   });
 
-  // Filter Chips
+  requestAnimationFrame(animateConfetti);
+}
+
+function setupEventListeners() {
+  document.querySelectorAll(".tab-btn").forEach(btn => {
+    btn.addEventListener("click", () => { switchTab(btn.dataset.tab); });
+  });
+
   document.querySelectorAll(".chip").forEach(chip => {
     chip.addEventListener("click", () => {
       document.querySelectorAll(".chip").forEach(c => c.classList.remove("active"));
@@ -450,99 +437,104 @@ function setupEventListeners() {
     });
   });
 
-  // Search Input
   const searchInput = document.getElementById("search-input");
   searchInput.addEventListener("input", (e) => {
     searchTerm = e.target.value.toLowerCase().trim();
     renderParcels();
   });
 
-  // Action: Trigger AI SAM Segmentation for selected segment
-  document.getElementById("btn-run-sam").addEventListener("click", async () => {
-    const btn = document.getElementById("btn-run-sam");
+  document.getElementById("btn-run-sam").addEventListener("click", async (e) => {
+    const btn = e.currentTarget;
     const origHtml = btn.innerHTML;
     btn.innerHTML = `<i class="ph-bold ph-spinner" style="animation: spin 1s infinite linear;"></i> Extracting...`;
+    btn.classList.add("btn-shimmer");
+    showToast("SAM segmentation started — processing drone imagery", "info");
     try {
-      await fetch(`${API_BASE}/parcels/run-segmentation?region=${selectedCity}&segment=${selectedSegment}`, { method: "POST" });
-      await loadDataForCurrentSegment();
+      await fetch(`${API_BASE}/parcels/run-segmentation`, { method: "POST" });
+      await loadData();
+      showToast("Footprint extraction complete", "success");
     } catch (err) {
       console.error(err);
+      showToast("Segmentation failed — check backend connection", "error");
     } finally {
       btn.innerHTML = origHtml;
+      btn.classList.remove("btn-shimmer");
     }
   });
 
-  // Action: Trigger Conflict Matrix Check for selected segment
   document.getElementById("btn-run-topology").addEventListener("click", async () => {
+    showToast("Running topology validation matrix...", "info");
     try {
-      await fetch(`${API_BASE}/conflicts/detect?region=${selectedCity}&segment=${selectedSegment}`, { method: "POST" });
-      await loadDataForCurrentSegment();
+      await fetch(`${API_BASE}/conflicts/detect`, { method: "POST" });
+      await loadData();
       switchTab("conflicts-view");
+      showToast("Topology check complete", "success");
     } catch (err) {
       console.error(err);
+      showToast("Topology check failed", "error");
     }
   });
 
-  // Action: Export GeoJSON for current segment
-  document.getElementById("btn-export-geojson").addEventListener("click", () => {
-    if (!allParcelsData) return;
-    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(allParcelsData, null, 2));
-    const downloadAnchor = document.createElement("a");
-    downloadAnchor.setAttribute("href", dataStr);
-    downloadAnchor.setAttribute("download", `cadastral_parcels_${selectedCity}_${selectedSegment}.geojson`);
-    document.body.appendChild(downloadAnchor);
-    downloadAnchor.click();
-    downloadAnchor.remove();
+  document.getElementById("btn-export-geojson").addEventListener("click", exportGeoJSON);
+  document.getElementById("nav-export").addEventListener("click", exportGeoJSON);
+
+  document.getElementById("nav-home").addEventListener("click", () => { resetWorkspace(); });
+  document.getElementById("scroll-fab").addEventListener("click", () => { resetWorkspace(); });
+
+  document.getElementById("nav-help").addEventListener("click", () => {
+    showToast("Click any parcel on the map to inspect its record, or open the Conflicts tab to arbitrate boundary overlaps.", "info", "About this workspace");
   });
 
-  // Action: Approve Parcel
-  document.getElementById("btn-approve-parcel").addEventListener("click", async () => {
+  document.getElementById("btn-approve-parcel").addEventListener("click", async (e) => {
     if (!selectedParcelId) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    triggerConfetti(rect.left + rect.width / 2, rect.top);
     try {
       await fetch(`${API_BASE}/parcels/${selectedParcelId}/approve`, { method: "POST" });
-      await loadDataForCurrentSegment();
+      await loadData();
       if (allParcelsData) {
         const updated = allParcelsData.features.find(p => p.id === selectedParcelId);
         if (updated) selectParcel(updated);
       }
+      showToast("Parcel approved and registered", "success");
     } catch (err) {
       console.error(err);
+      showToast("Approval failed", "error");
     }
   });
 
-  // Action: Reject Parcel
   document.getElementById("btn-reject-parcel").addEventListener("click", async () => {
     if (!selectedParcelId) return;
     try {
       await fetch(`${API_BASE}/parcels/${selectedParcelId}/reject`, { method: "POST" });
-      await loadDataForCurrentSegment();
+      await loadData();
       if (allParcelsData) {
         const updated = allParcelsData.features.find(p => p.id === selectedParcelId);
         if (updated) selectParcel(updated);
       }
+      showToast("Parcel rejected", "warning");
     } catch (err) {
       console.error(err);
+      showToast("Rejection failed", "error");
     }
   });
 
-  // Action: Copy ULPIN
-  document.getElementById("btn-copy-ulpin").addEventListener("click", () => {
+  document.getElementById("btn-copy-ulpin").addEventListener("click", (e) => {
     const code = document.getElementById("detail-ulpin").textContent;
     navigator.clipboard.writeText(code);
-    const copyBtn = document.getElementById("btn-copy-ulpin");
-    copyBtn.innerHTML = `<i class="ph-bold ph-check" style="color: #10b981;"></i>`;
+    const copyBtn = e.currentTarget;
+    copyBtn.classList.add("copied");
+    copyBtn.innerHTML = `<i class="ph-bold ph-check" style="color: #1B7B3F;"></i>`;
+    showToast("ULPIN copied to clipboard", "success");
     setTimeout(() => {
+      copyBtn.classList.remove("copied");
       copyBtn.innerHTML = `<i class="ph-bold ph-copy"></i>`;
     }, 1500);
   });
 
-  // Layer Toggles
-  document.getElementById("toggle-parcels").addEventListener("click", (e) => {
-    toggleLayer(parcelsLayer, e.currentTarget);
-  });
-  document.getElementById("toggle-conflicts").addEventListener("click", (e) => {
-    toggleLayer(conflictsLayer, e.currentTarget);
-  });
+  document.getElementById("toggle-parcels").addEventListener("click", (e) => { toggleLayer(parcelsLayer, e.currentTarget); });
+  document.getElementById("toggle-conflicts").addEventListener("click", (e) => { toggleLayer(conflictsLayer, e.currentTarget); });
+  document.getElementById("toggle-roads").addEventListener("click", (e) => { toggleLayer(roadsLayer, e.currentTarget); });
 }
 
 function toggleLayer(layer, buttonEl) {
@@ -555,12 +547,72 @@ function toggleLayer(layer, buttonEl) {
   }
 }
 
-function setupStaticRegionsFallback() {
-  const citySelect = document.getElementById("city-select");
-  citySelect.innerHTML = `
-    <option value="delhi">Delhi</option>
-    <option value="ghaziabad">Ghaziabad</option>
-    <option value="meerut">Meerut</option>
-    <option value="panipat">Panipat</option>
-  `;
+function exportGeoJSON() {
+  if (!allParcelsData) return;
+  const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(allParcelsData, null, 2));
+  const downloadAnchor = document.createElement("a");
+  downloadAnchor.setAttribute("href", dataStr);
+  downloadAnchor.setAttribute("download", "cadastral_ai_parcels_sih2026.geojson");
+  document.body.appendChild(downloadAnchor);
+  downloadAnchor.click();
+  downloadAnchor.remove();
+  showToast("GeoJSON export downloaded", "success");
+}
+
+function resetWorkspace() {
+  // Clear filters and search
+  activeFilter = "all";
+  searchTerm = "";
+  const searchInput = document.getElementById("search-input");
+  if (searchInput) searchInput.value = "";
+  document.querySelectorAll(".chip").forEach(c => c.classList.remove("active"));
+  const allChip = document.querySelector('.chip[data-filter="all"]');
+  if (allChip) allChip.classList.add("active");
+  renderParcels();
+
+  // Clear parcel selection
+  selectedParcelId = null;
+  parcelsLayer.setStyle(styleParcelFeature);
+  const card = document.getElementById("parcel-details-card");
+  const empty = document.getElementById("parcel-empty-state");
+  if (card) card.classList.add("hidden");
+  if (empty) empty.classList.remove("hidden");
+  switchTab("inspector-view");
+
+  // Mark Home as the active nav item
+  document.querySelectorAll(".gov-nav .nav-item").forEach(n => n.classList.remove("active"));
+  const homeBtn = document.getElementById("nav-home");
+  if (homeBtn) homeBtn.classList.add("active");
+
+  // Recentre the map
+  if (map) map.flyTo([12.9348, 77.6207], 17, { duration: 1 });
+
+  showToast("Workspace reset to default view", "info");
+}
+
+function loadSampleFallback() {
+  fetch("../data/sample_area/sample_parcels.geojson")
+    .then(r => r.json())
+    .then(data => {
+      allParcelsData = data;
+      renderParcels();
+      renderStats({
+        total_parcels: data.features.length,
+        approved_parcels: data.features.filter(f => f.properties.status === "approved").length,
+        pending_parcels: data.features.filter(f => f.properties.status === "pending").length,
+        flagged_parcels: data.features.filter(f => f.properties.status === "flagged").length,
+        total_conflicts: 1,
+        total_surveyed_area_hectares: 0.45,
+        ai_confidence_average: 0.92
+      });
+    })
+    .catch(() => {});
+
+  fetch("../data/sample_area/sample_conflicts.geojson")
+    .then(r => r.json())
+    .then(data => {
+      allConflictsData = data;
+      renderConflicts();
+    })
+    .catch(() => {});
 }
