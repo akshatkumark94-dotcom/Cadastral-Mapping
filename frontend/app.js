@@ -209,6 +209,18 @@ async function loadDataForCurrentSegment(autoFit = true) {
     allParcelsData = parcelsRes;
     allConflictsData = conflictsRes;
 
+    // Update hero breadcrumbs
+    const citySelect = document.getElementById("city-select");
+    const segmentSelect = document.getElementById("segment-select");
+    const crumbRegion = document.getElementById("crumb-region-name");
+    const crumbSegment = document.getElementById("crumb-segment-name");
+    if (crumbRegion && citySelect && citySelect.selectedIndex >= 0) {
+      crumbRegion.textContent = citySelect.options[citySelect.selectedIndex].text;
+    }
+    if (crumbSegment && segmentSelect && segmentSelect.selectedIndex >= 0) {
+      crumbSegment.textContent = segmentSelect.options[segmentSelect.selectedIndex].text;
+    }
+
     renderParcels(autoFit);
     renderConflicts();
     renderStats(statsRes);
